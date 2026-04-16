@@ -14,6 +14,7 @@ const baseTheme = EditorView.theme({
 
 export function createEditor(domElement, ytext, awareness) {
   const state = EditorState.create({
+    doc: ytext.toString(),
     extensions: [
       lineNumbers(),
       history(),

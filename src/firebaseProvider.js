@@ -167,25 +167,30 @@ export class FirebaseProvider {
         } catch {}
       })
 
-      const current = this.awareness.getStates()
-      const removed = []
-      const updated = []
-      const added = []
+      // Defer: Firebase-Callbacks können mitten in einer EditorView.update feuern.
+      // Ein direkter awareness.emit würde dann einen reentrant view.dispatch triggern.
+      queueMicrotask(() => {
+        if (this._destroyed) return
+        const current = this.awareness.getStates()
+        const removed = []
+        const updated = []
+        const added = []
 
-      current.forEach((_, id) => {
-        if (id !== this.clientId && !remoteStates.has(id)) removed.push(id)
-      })
-      remoteStates.forEach((state, id) => {
-        if (current.has(id)) updated.push(id)
-        else added.push(id)
-        this.awareness.states.set(id, state)
-      })
-      removed.forEach(id => this.awareness.states.delete(id))
+        current.forEach((_, id) => {
+          if (id !== this.clientId && !remoteStates.has(id)) removed.push(id)
+        })
+        remoteStates.forEach((state, id) => {
+          if (current.has(id)) updated.push(id)
+          else added.push(id)
+          this.awareness.states.set(id, state)
+        })
+        removed.forEach(id => this.awareness.states.delete(id))
 
-      if (added.length || updated.length || removed.length) {
-        this.awareness.emit('change', [{ added, updated, removed }, this])
-        this.awareness.emit('update', [{ added, updated, removed }, this])
-      }
+        if (added.length || updated.length || removed.length) {
+          this.awareness.emit('change', [{ added, updated, removed }, this])
+          this.awareness.emit('update', [{ added, updated, removed }, this])
+        }
+      })
     })
   }
 
