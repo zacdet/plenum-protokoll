@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { ref, push, onChildAdded, off } from 'firebase/database'
+import { ref, get, set, onValue, off } from 'firebase/database'
 
 function encode(bytes) {
   let s = ''
@@ -22,63 +22,52 @@ export class FirebaseProvider {
   constructor(database, roomId, ydoc) {
     this.ydoc = ydoc
     this.roomId = roomId
-    this._opsRef = ref(database, `rooms/${roomId}/updates`)
-    this._knownKeys = new Set()
+    this._docRef = ref(database, `rooms/${roomId}/doc`)
+    this._handler = null
+    this._isApplying = false
+
+    console.log(`[Firebase] Verbinde mit Raum: ${roomId}`)
     
-    console.log(`[Firebase] Initialisiere Raum: ${roomId}`)
-    
-    // Wir nutzen ein Promise, das sich auflöst, sobald wir verbunden sind
     this.whenSynced = new Promise((resolve) => {
-      let isFirstSync = true
-      
-      // onChildAdded feuert erst für alle existierenden Einträge (Historie)
-      // und bleibt dann aktiv für neue (Echtzeit).
-      onChildAdded(this._opsRef, (child) => {
-        if (this._knownKeys.has(child.key)) return
-        this._knownKeys.add(child.key)
-        
-        const update = decode(child.val())
-        if (update.length > 0) {
-          // Wir wenden das Update mit origin 'firebase' an
-          Y.applyUpdate(this.ydoc, update, 'firebase')
-          
-          if (!isFirstSync) {
-            console.log('[Firebase] Remote-Update empfangen und angewendet')
-          }
+      // 1. Einmalig den aktuellen Stand laden
+      get(this._docRef).then(snap => {
+        if (snap.exists()) {
+          const bytes = decode(snap.val())
+          Y.applyUpdate(this.ydoc, bytes, 'firebase')
+          console.log(`[Firebase] Dokument geladen (${bytes.length} Bytes)`)
+        } else {
+          console.log('[Firebase] Neues Dokument')
         }
-      })
-
-      // Wir gehen davon aus, dass wir nach einer kurzen Zeit "bereit" sind
-      // (Firebase hat keine explizite "EndOfInitialData" Flag für onChildAdded)
-      setTimeout(() => {
-        isFirstSync = false
-        console.log(`[Firebase] Raum bereit. Aktuelle Länge: ${this.ydoc.getText('protokoll').toString().length}`)
-        resolve()
-      }, 1000)
-    })
-
-    // Lokale Änderungen abfangen
-    this._handler = (update, origin) => {
-      // NUR senden, wenn es NICHT von Firebase kommt
-      if (origin !== 'firebase') {
-        console.log('[Firebase] Sende lokale Änderung...')
-        const encoded = encode(update)
-        push(this._opsRef, encoded).then(ref => {
-          this._knownKeys.add(ref.key)
-        }).catch(err => {
-          console.error('[Firebase] Sende-Fehler:', err)
+        
+        // 2. Auf Echtzeit-Änderungen hören
+        onValue(this._docRef, (snap) => {
+          if (this._isApplying) return
+          if (snap.exists()) {
+            const bytes = decode(snap.val())
+            this._isApplying = true
+            Y.applyUpdate(this.ydoc, bytes, 'firebase')
+            this._isApplying = false
+            console.log('[Firebase] Update empfangen')
+          }
         })
-      }
-    }
-    
-    this.ydoc.on('update', this._handler)
+
+        // 3. Eigene Änderungen speichern
+        this._handler = (update, origin) => {
+          if (origin === 'firebase') return
+          
+          // Wir speichern immer das gesamte Dokument
+          const fullState = Y.encodeStateAsUpdate(this.ydoc)
+          set(this._docRef, encode(fullState))
+        }
+        this.ydoc.on('update', this._handler)
+        
+        resolve()
+      })
+    })
   }
 
   destroy() {
-    console.log(`[Firebase] Verlasse Raum: ${this.roomId}`)
-    if (this._handler) {
-      this.ydoc.off('update', this._handler)
-    }
-    off(this._opsRef)
+    if (this._handler) this.ydoc.off('update', this._handler)
+    off(this._docRef)
   }
 }
