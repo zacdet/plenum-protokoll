@@ -1,86 +1,91 @@
 import * as Y from 'yjs'
-import { ref, get, set, onValue, off } from 'firebase/database'
+import { ref, get, push, onChildAdded, off, query, startAfter } from 'firebase/database'
+
+const LOG = '[Firebase-V8]'
+
+function toBase64(uint8) {
+  return btoa(String.fromCharCode.apply(null, uint8))
+}
+
+function fromBase64(b64) {
+  const s = atob(b64)
+  const uint8 = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) uint8[i] = s.charCodeAt(i)
+  return uint8
+}
 
 export class FirebaseProvider {
   constructor(database, roomId, ydoc) {
     this.ydoc = ydoc
     this.roomId = roomId
-    // Neuer Pfad für sauberen Neustart
-    this._ref = ref(database, `rooms/${roomId}/state_v7`)
-    this._isRemote = false
-    this._synced = false
+    // V8: Reiner Inkrementeller Sync (wie y-webrtc / Google Docs)
+    this._updatesRef = ref(database, `rooms/${roomId}/updates_v8`)
+    this._knownKeys = new Set()
     this._handler = null
-    this._saveTimer = null
 
-    console.log(`[Firebase] Initialisiere Raum: ${roomId}`)
+    console.log(`${LOG} Verbinde mit Raum: ${roomId}`)
 
     this.whenSynced = new Promise(async (resolve) => {
-      // 1. Einmalig den aktuellen Stand laden
+      // 1. Lade alle existierenden Updates (Historie)
       try {
-        const snap = await get(this._ref)
+        const snap = await get(this._updatesRef)
         if (snap.exists()) {
-          const bytes = this._decode(snap.val())
-          this._isRemote = true
-          Y.applyUpdate(this.ydoc, bytes, 'firebase')
-          this._isRemote = false
-          console.log(`[Firebase] Cloud-Daten geladen (${bytes.length} Bytes)`)
+          const updates = []
+          snap.forEach(child => {
+            this._knownKeys.add(child.key)
+            updates.push(fromBase64(child.val()))
+          })
+          
+          if (updates.length > 0) {
+            this.ydoc.transact(() => {
+              updates.forEach(u => Y.applyUpdate(this.ydoc, u, 'firebase'))
+            }, 'firebase')
+            console.log(`${LOG} ${updates.length} Updates aus Historie geladen`)
+          }
         } else {
-          console.log('[Firebase] Dokument ist neu (kein Stand in Cloud)')
+          console.log(`${LOG} Dokument ist komplett neu`)
         }
       } catch (e) {
-        console.error('[Firebase] Fehler beim Laden:', e)
+        console.error(`${LOG} Fehler beim Laden der Historie:`, e)
       }
 
-      // 2. Auf Echtzeit-Updates hören
-      onValue(this._ref, (snap) => {
-        if (this._isRemote) return
-        if (snap.exists()) {
-          const bytes = this._decode(snap.val())
-          this._isRemote = true
+      // 2. Höre ab jetzt auf NEUE Updates von anderen
+      onChildAdded(this._updatesRef, (child) => {
+        if (this._knownKeys.has(child.key)) return
+        this._knownKeys.add(child.key)
+        
+        try {
+          const bytes = fromBase64(child.val())
           Y.applyUpdate(this.ydoc, bytes, 'firebase')
-          this._isRemote = false
-          console.log('[Firebase] Live-Update empfangen')
+        } catch (e) {
+          console.error(`${LOG} Fehler beim Anwenden des Updates:`, e)
         }
       })
 
-      // Erst jetzt erlauben wir das Speichern
-      this._synced = true
-      
-      // 3. Eigene Änderungen speichern
+      // 3. Eigene lokale Änderungen sofort an Firebase senden
       this._handler = (update, origin) => {
-        // Nur speichern, wenn wir fertig geladen haben und es nicht von Firebase kommt
-        if (origin === 'firebase' || !this._synced) return
+        // Ignoriere Updates, die wir gerade von Firebase bekommen haben
+        if (origin === 'firebase') return
         
-        clearTimeout(this._saveTimer)
-        this._saveTimer = setTimeout(() => {
-          const state = Y.encodeStateAsUpdate(this.ydoc)
-          set(this._ref, this._encode(state))
-            .then(() => console.log('[Firebase] Stand dauerhaft gespeichert'))
-            .catch(e => console.error('[Firebase] Speicherfehler:', e))
-        }, 1000)
+        try {
+          const b64 = toBase64(update)
+          push(this._updatesRef, b64).then(ref => {
+            this._knownKeys.add(ref.key) // Eigene Updates als bekannt markieren
+          }).catch(e => console.error(`${LOG} Sende-Fehler:`, e))
+        } catch (e) {
+          console.error(`${LOG} Encoding-Fehler:`, e)
+        }
       }
       this.ydoc.on('update', this._handler)
-      
+
+      console.log(`${LOG} Synchronisation abgeschlossen. Editor bereit.`)
       resolve()
     })
   }
 
-  _encode(uint8) {
-    let s = ''
-    for (let i = 0; i < uint8.length; i++) s += String.fromCharCode(uint8[i])
-    return btoa(s)
-  }
-
-  _decode(b64) {
-    const s = atob(b64)
-    const uint8 = new Uint8Array(s.length)
-    for (let i = 0; i < s.length; i++) uint8[i] = s.charCodeAt(i)
-    return uint8
-  }
-
   destroy() {
-    clearTimeout(this._saveTimer)
+    console.log(`${LOG} Trenne Raum: ${this.roomId}`)
     if (this._handler) this.ydoc.off('update', this._handler)
-    off(this._ref)
+    off(this._updatesRef)
   }
 }
