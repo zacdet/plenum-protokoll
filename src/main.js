@@ -1,67 +1,52 @@
-/**
- * Entry Point
- */
 import { getRoomId, generateShareLink } from './room.js'
 import { requireIdentity } from './identity.js'
 import { initCollaboration } from './collaboration.js'
 import { createEditor, getContent } from './editor.js'
-import { initAwareness, renderUserBadges } from './awareness.js'
+import { renderUserBadges } from './awareness.js'
+import { initPresence, watchPresence } from './presence.js'
 import { initToolbar } from './toolbar.js'
 import { copyToClipboard, downloadWiki, showToast } from './export.js'
 
 async function main() {
-  // 1. Identität sicherstellen (Modal falls neu)
   const identity = await requireIdentity()
+  const roomId   = getRoomId()
 
-  // 2. Room
-  const roomId = getRoomId()
   document.getElementById('room-label').textContent = roomId
 
-  // 3. Yjs + WebRTC + IndexedDB
-  const { ydoc, provider, persistence, ytext, awareness } = initCollaboration(roomId)
+  // Yjs + Firebase + lokaler Cache
+  const { ydoc, provider, localCache, ytext, awareness } = initCollaboration(roomId)
 
-  // 4. Awareness mit Identität
-  initAwareness(awareness, identity)
-  renderUserBadges(document.getElementById('user-badges'), awareness)
+  // Online-Präsenz registrieren
+  const clientId = initPresence(roomId, identity)
+  const badgesEl = document.getElementById('user-badges')
+  watchPresence(roomId, clientId, users => renderUserBadges(badgesEl, users))
 
-  // 5. Editor (erst nach IndexedDB-Sync mounten → vorhandener Inhalt direkt sichtbar)
+  // Editor erst rendern wenn Firebase-Sync abgeschlossen
   const editorContainer = document.getElementById('editor')
-  editorContainer.innerHTML = '<div class="editor-loading">Lade gespeicherten Inhalt…</div>'
+  editorContainer.innerHTML = '<div class="editor-loading">Lade Dokument…</div>'
 
-  await new Promise(resolve => persistence.once('synced', resolve))
+  await provider.whenSynced
 
   editorContainer.innerHTML = ''
   const editorView = createEditor(editorContainer, ytext, awareness)
 
-  // 6. Toolbar
   initToolbar(document.getElementById('toolbar'), editorView)
 
-  // 7. Verbindungsstatus + Peer-Anzahl
+  // Verbindungsstatus (Firebase ist immer verbunden sobald synced)
   const statusEl = document.getElementById('connection-status')
+  statusEl.textContent = 'Verbunden'
+  statusEl.className = 'status-connected'
 
-  function updateStatus() {
-    const peers = provider.awareness.getStates().size - 1  // eigene State nicht mitzählen
-    if (peers > 0) {
-      statusEl.textContent = peers === 1 ? '1 weiterer online' : `${peers} weitere online`
-      statusEl.className = 'status-connected'
-    } else {
-      statusEl.textContent = provider.connected ? 'Alleine online' : 'Verbinde…'
-      statusEl.className = provider.connected ? 'status-connected' : 'status-connecting'
-    }
-  }
-
-  provider.on('status', updateStatus)
-  awareness.on('change', updateStatus)
-  updateStatus()
-
-  // 8. Auto-Save-Anzeige (IndexedDB speichert automatisch jeden Keystroke)
+  // Auto-Save-Anzeige
   const saveEl = document.getElementById('save-status')
-  ydoc.on('update', () => {
-    saveEl.textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  ydoc.on('update', (_, origin) => {
+    if (origin === 'firebase') return  // fremde Updates nicht als "gespeichert" zeigen
+    saveEl.textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    })
     saveEl.className = 'save-status saved'
   })
 
-  // 9. Header-Buttons
   document.getElementById('btn-share').addEventListener('click', async () => {
     await copyToClipboard(generateShareLink())
     showToast('Link kopiert!')

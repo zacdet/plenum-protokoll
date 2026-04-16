@@ -1,30 +1,21 @@
-/**
- * Yjs-Kern: WebRTC-Provider + IndexedDB-Persistenz
- */
 import * as Y from 'yjs'
-import { WebrtcProvider } from 'y-webrtc'
+import { Awareness } from 'y-protocols/awareness'
 import { IndexeddbPersistence } from 'y-indexeddb'
-
-const SIGNALING_SERVERS = [
-  'wss://signaling.yjs.dev',
-  'wss://y-webrtc-signaling-eu.fly.dev',
-  'wss://y-webrtc-signaling-us.fly.dev',
-]
+import { FirebaseProvider } from './firebaseProvider.js'
+import { db } from './firebase.js'
 
 export function initCollaboration(roomId) {
   const ydoc = new Y.Doc()
   const ytext = ydoc.getText('protokoll')
 
-  // Lokale Persistenz – speichert automatisch jeden Keystroke in IndexedDB
-  const persistence = new IndexeddbPersistence(roomId, ydoc)
+  // Lokaler Cache (schnelleres erstes Laden)
+  const localCache = new IndexeddbPersistence(roomId, ydoc)
 
-  // WebRTC P2P Sync (nutzt BroadcastChannel für gleichen Browser automatisch)
-  const provider = new WebrtcProvider(roomId, ydoc, {
-    signaling: SIGNALING_SERVERS,
-    maxConns: 4,
-  })
+  // Firebase: zentraler persistenter Sync (Quelle der Wahrheit)
+  const provider = new FirebaseProvider(db, roomId, ydoc)
 
-  const awareness = provider.awareness
+  // Awareness nur lokal (Cursor-Highlight im eigenen Editor)
+  const awareness = new Awareness(ydoc)
 
-  return { ydoc, provider, persistence, ytext, awareness }
+  return { ydoc, provider, localCache, ytext, awareness }
 }
