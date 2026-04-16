@@ -1,35 +1,57 @@
-import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view'
+import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { defaultKeymap, historyKeymap, history, indentWithTab } from '@codemirror/commands'
 import { yCollab } from 'y-codemirror.next'
+import { lineClassPlugin } from './wikiDecorations.js'
 
 const baseTheme = EditorView.theme({
-  '&': { height: '100%', fontSize: '14px', fontFamily: '"Fira Mono", "Consolas", monospace' },
-  '.cm-content': { padding: '12px 16px', caretColor: 'var(--color-accent)' },
-  '.cm-line': { lineHeight: '1.6' },
-  '.cm-gutters': { background: 'var(--color-bg-secondary)', borderRight: '1px solid var(--color-border)', color: 'var(--color-text-muted)' },
-  '.cm-activeLineGutter': { background: 'var(--color-bg-highlight)' },
-  '.cm-activeLine': { background: 'var(--color-bg-highlight)' },
+  '&': {
+    height: '100%',
+    fontSize: '15px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  },
+  '.cm-content': {
+    padding: '32px 48px',
+    caretColor: 'var(--color-accent)',
+    maxWidth: '820px',
+    margin: '0 auto',
+    lineHeight: '1.8',
+  },
+  '.cm-line': { padding: '0' },
+  '.cm-focused .cm-cursor': { borderLeftColor: 'var(--color-accent)' },
+  '.cm-gutters': { display: 'none' },
+  '.cm-activeLine': { background: 'rgba(77,171,247,0.04)' },
+  // Wiki-Überschriften
+  '.wl-h1': { fontSize: '1.7em', fontWeight: '700', paddingBottom: '6px', borderBottom: '2px solid var(--color-border)', marginBottom: '4px' },
+  '.wl-h2': { fontSize: '1.4em', fontWeight: '700', paddingBottom: '4px', borderBottom: '1px solid var(--color-border)', marginBottom: '2px' },
+  '.wl-h3': { fontSize: '1.2em', fontWeight: '600' },
+  '.wl-h4': { fontSize: '1.05em', fontWeight: '600', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' },
+  '.wl-h5': { fontSize: '1em', fontWeight: '600', color: 'var(--color-text-muted)' },
+  '.wl-h6': { fontSize: '.95em', fontWeight: '600', color: 'var(--color-text-muted)' },
+  '.wl-ul':  { paddingLeft: '1.2em' },
+  '.wl-ol':  { paddingLeft: '1.2em' },
+  '.wl-dt':  { fontWeight: '600' },
+  '.wl-dd':  { paddingLeft: '1.4em', color: 'var(--color-text-muted)' },
+  '.wl-hr':  { color: 'var(--color-border)', opacity: '0.5' },
 })
 
 export function createEditor(domElement, ytext, awareness) {
   const state = EditorState.create({
     doc: ytext.toString(),
     extensions: [
-      lineNumbers(),
       history(),
       drawSelection(),
       highlightActiveLine(),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.lineWrapping,
       baseTheme,
+      lineClassPlugin,
       yCollab(ytext, awareness),
     ],
   })
   return new EditorView({ state, parent: domElement })
 }
 
-/** Text an Cursorposition einfügen */
 export function insertAtCursor(view, text) {
   const { from, to } = view.state.selection.main
   view.dispatch({
@@ -39,10 +61,6 @@ export function insertAtCursor(view, text) {
   view.focus()
 }
 
-/**
- * Markierten Text mit before/after umschließen.
- * Ohne Selektion: Marker einfügen und Cursor dazwischen.
- */
 export function wrapSelection(view, before, after) {
   const { from, to } = view.state.selection.main
   const selected = view.state.sliceDoc(from, to)
@@ -60,7 +78,6 @@ export function wrapSelection(view, before, after) {
   view.focus()
 }
 
-/** Ganzen Dokumentinhalt als String */
 export function getContent(view) {
   return view.state.doc.toString()
 }

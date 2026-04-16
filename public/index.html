@@ -20,9 +20,7 @@
     <div id="header-right">
       <span id="save-status" class="save-status"></span>
       <span id="connection-status" class="status-connecting">Verbinde…</span>
-      <button id="btn-quelltext" title="Wiki-Quelltext ein/aus">Quelltext</button>
-      <button id="btn-share">Link kopieren</button>
-      <button id="btn-export-clipboard">Kopieren</button>
+      <button id="btn-preview" title="Vorschau ein/aus">Vorschau</button>
       <button id="btn-export-download">Download .wiki</button>
       <button id="btn-theme" title="Hell/Dunkel umschalten">🌙</button>
       <button id="btn-identity" title="Name ändern">✎</button>
@@ -31,12 +29,12 @@
 
   <div id="toolbar"></div>
 
-  <div id="workspace" class="with-editor">
-    <main id="rendered-panel">
-      <div id="rendered-content"><p class="rendered-placeholder">Lade Dokument…</p></div>
-    </main>
-    <aside id="editor-panel">
+  <div id="workspace">
+    <main id="editor-panel">
       <div id="editor"></div>
+    </main>
+    <aside id="preview-panel">
+      <div id="rendered-content"></div>
     </aside>
   </div>
 

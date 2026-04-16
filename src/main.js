@@ -5,7 +5,7 @@ import { createEditor, getContent } from './editor.js'
 import { renderUserBadges } from './awareness.js'
 import { initPresence, watchPresence, removePresence } from './presence.js'
 import { initToolbar } from './toolbar.js'
-import { copyToClipboard, downloadWiki, showToast } from './export.js'
+import { downloadWiki } from './export.js'
 import { initProtocolSelector } from './protocolSelector.js'
 import { loadProtocolList, createProtocol } from './protocols.js'
 import { renderMediaWiki } from './preview.js'
@@ -34,13 +34,6 @@ async function main() {
   await mountEditor(roomId, identity)
 
   // Header-Buttons
-  document.getElementById('btn-share').addEventListener('click', async () => {
-    await copyToClipboard(generateShareLink())
-    showToast('Link kopiert!')
-  })
-  document.getElementById('btn-export-clipboard').addEventListener('click', () => {
-    if (active?.editorView) copyToClipboard(getContent(active.editorView))
-  })
   document.getElementById('btn-export-download').addEventListener('click', () => {
     if (active?.editorView) downloadWiki(getContent(active.editorView), getRoomId())
   })
@@ -49,27 +42,24 @@ async function main() {
     location.reload()
   })
 
-  // Quelltext-Panel (Wiki-Editor) ein/aus
-  const quelltextBtn = document.getElementById('btn-quelltext')
-  const workspace    = document.getElementById('workspace')
-  let editorOpen = true
+  // Vorschau-Panel (gerendertes HTML)
+  const previewBtn  = document.getElementById('btn-preview')
+  const workspace   = document.getElementById('workspace')
+  let previewOpen = false
 
-  quelltextBtn.classList.toggle('active', editorOpen)
-  quelltextBtn.addEventListener('click', () => {
-    editorOpen = !editorOpen
-    workspace.classList.toggle('with-editor', editorOpen)
-    quelltextBtn.classList.toggle('active', editorOpen)
-    if (editorOpen && active?.editorView) {
-      // Neu messen nach Einblenden (CodeMirror braucht das nach display:none)
-      requestAnimationFrame(() => active.editorView.requestMeasure())
-    }
+  previewBtn.addEventListener('click', () => {
+    previewOpen = !previewOpen
+    workspace.classList.toggle('with-preview', previewOpen)
+    previewBtn.classList.toggle('active', previewOpen)
+    if (previewOpen) updatePreview()
   })
 
-  // Rendered-Ansicht live aktualisieren
-  document.addEventListener('editor-changed', updateRenderedView)
+  document.addEventListener('editor-changed', () => {
+    if (previewOpen) updatePreview()
+  })
 }
 
-function updateRenderedView() {
+function updatePreview() {
   if (!active?.editorView) return
   const el = document.getElementById('rendered-content')
   if (!el) return
@@ -129,10 +119,7 @@ function teardown() {
 
 async function mountEditor(roomId, identity) {
   const editorEl = document.getElementById('editor')
-  const renderedEl = document.getElementById('rendered-content')
-
-  editorEl.innerHTML = ''
-  renderedEl.innerHTML = '<p class="rendered-placeholder">Lade Dokument…</p>'
+  editorEl.innerHTML = '<div class="editor-loading">Lade Dokument…</div>'
   document.getElementById('connection-status').textContent = 'Verbinde…'
   document.getElementById('connection-status').className = 'status-connecting'
 
@@ -145,6 +132,7 @@ async function mountEditor(roomId, identity) {
 
   await provider.whenSynced
 
+  editorEl.innerHTML = ''
   const editorView = createEditor(editorEl, ytext, awareness)
   active = { provider, presenceUnsub, editorView, ydoc }
 
@@ -153,10 +141,6 @@ async function mountEditor(roomId, identity) {
   document.getElementById('connection-status').textContent = 'Verbunden'
   document.getElementById('connection-status').className = 'status-connected'
 
-  // Rendered-Ansicht initial füllen
-  updateRenderedView()
-
-  // Save-Status + Rendered-Ansicht bei Änderungen
   const saveEl = document.getElementById('save-status')
   ydoc.on('update', (_, origin) => {
     document.dispatchEvent(new Event('editor-changed'))
