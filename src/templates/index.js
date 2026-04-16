@@ -121,8 +121,8 @@ export const TEMPLATE_GROUPS = [
   {
     label: 'Listen',
     buttons: [
-      { id: 'ul',    label: '• Liste',   template: () => '\n* Punkt 1\n* Punkt 2\n* Punkt 3\n' },
-      { id: 'ol',    label: '1. Liste',  template: () => '\n# Punkt 1\n# Punkt 2\n# Punkt 3\n' },
+      { id: 'ul',    label: '• Liste',   template: () => '* ' },
+      { id: 'ol',    label: '1. Liste',  template: () => '# ' },
       { id: 'hr',    label: '—',         template: () => '\n----\n' },
       { id: 'table', label: 'Tabelle',   template: () => '\n{| class="wikitable"\n|-\n! Spalte 1 !! Spalte 2\n|-\n| Zelle 1 || Zelle 2\n|}\n' },
     ],

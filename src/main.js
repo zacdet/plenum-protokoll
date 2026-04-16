@@ -10,11 +10,13 @@ import { initProtocolSelector } from './protocolSelector.js'
 import { loadProtocolList, createProtocol } from './protocols.js'
 import { renderMediaWiki } from './preview.js'
 
-let active    = null   // { provider, presenceUnsub, editorView, ydoc }
-let switching = false  // verhindert doppelte Wechsel
-let selectorSetCurrentId = null  // Funktion zum Aktualisieren des Selector-Titels
+let active    = null
+let switching = false
+let selectorSetCurrentId = null
 
 async function main() {
+  initTheme()
+
   const identity = await requireIdentity()
 
   let roomId = getRoomId()
@@ -47,26 +49,53 @@ async function main() {
     location.reload()
   })
 
-  // Vorschau-Panel
-  const previewBtn     = document.getElementById('btn-preview')
-  const workspace      = document.getElementById('workspace')
-  const previewContent = document.getElementById('preview-content')
-  let previewOpen = false
+  // Quelltext-Panel (Wiki-Editor) ein/aus
+  const quelltextBtn = document.getElementById('btn-quelltext')
+  const workspace    = document.getElementById('workspace')
+  let editorOpen = true
 
-  previewBtn.addEventListener('click', () => {
-    previewOpen = !previewOpen
-    workspace.classList.toggle('with-preview', previewOpen)
-    previewBtn.classList.toggle('active', previewOpen)
-    if (previewOpen) updatePreview()
+  quelltextBtn.classList.toggle('active', editorOpen)
+  quelltextBtn.addEventListener('click', () => {
+    editorOpen = !editorOpen
+    workspace.classList.toggle('with-editor', editorOpen)
+    quelltextBtn.classList.toggle('active', editorOpen)
+    if (editorOpen && active?.editorView) {
+      // Neu messen nach Einblenden (CodeMirror braucht das nach display:none)
+      requestAnimationFrame(() => active.editorView.requestMeasure())
+    }
   })
 
-  function updatePreview() {
-    if (!previewOpen || !active?.editorView) return
-    previewContent.innerHTML = renderMediaWiki(getContent(active.editorView))
-  }
-
-  document.addEventListener('editor-changed', updatePreview)
+  // Rendered-Ansicht live aktualisieren
+  document.addEventListener('editor-changed', updateRenderedView)
 }
+
+function updateRenderedView() {
+  if (!active?.editorView) return
+  const el = document.getElementById('rendered-content')
+  if (!el) return
+  const html = renderMediaWiki(getContent(active.editorView))
+  el.innerHTML = html || '<p class="rendered-placeholder">Dokument ist leer.</p>'
+}
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+function initTheme() {
+  const btn = document.getElementById('btn-theme')
+  const apply = (light) => {
+    document.documentElement.classList.toggle('light', light)
+    btn.textContent = light ? '☀️' : '🌙'
+    btn.title = light ? 'Dunkelmodus' : 'Hellmodus'
+  }
+  let light = localStorage.getItem('plenum-theme') === 'light'
+  apply(light)
+  btn.addEventListener('click', () => {
+    light = !light
+    localStorage.setItem('plenum-theme', light ? 'light' : 'dark')
+    apply(light)
+  })
+}
+
+// ─── Protocol helpers ─────────────────────────────────────────────────────────
 
 async function resolveInitialProtocol() {
   const list = await loadProtocolList()
@@ -96,23 +125,27 @@ function teardown() {
   active = null
 }
 
+// ─── Editor mounten ───────────────────────────────────────────────────────────
+
 async function mountEditor(roomId, identity) {
-  const editorContainer = document.getElementById('editor')
-  editorContainer.innerHTML = '<div class="editor-loading">Lade Dokument…</div>'
+  const editorEl = document.getElementById('editor')
+  const renderedEl = document.getElementById('rendered-content')
+
+  editorEl.innerHTML = ''
+  renderedEl.innerHTML = '<p class="rendered-placeholder">Lade Dokument…</p>'
   document.getElementById('connection-status').textContent = 'Verbinde…'
   document.getElementById('connection-status').className = 'status-connecting'
 
   const { ydoc, provider, ytext, awareness } = initCollaboration(roomId, identity)
 
-  // Präsenz registrieren
   initPresence(roomId, identity)
-  const presenceUnsub = watchPresence(roomId, users => renderUserBadges(document.getElementById('user-badges'), users))
+  const presenceUnsub = watchPresence(roomId, users =>
+    renderUserBadges(document.getElementById('user-badges'), users)
+  )
 
-  // Warten bis Firebase-Sync fertig
   await provider.whenSynced
 
-  editorContainer.innerHTML = ''
-  const editorView = createEditor(editorContainer, ytext, awareness)
+  const editorView = createEditor(editorEl, ytext, awareness)
   active = { provider, presenceUnsub, editorView, ydoc }
 
   initToolbar(document.getElementById('toolbar'), editorView)
@@ -120,7 +153,10 @@ async function mountEditor(roomId, identity) {
   document.getElementById('connection-status').textContent = 'Verbunden'
   document.getElementById('connection-status').className = 'status-connected'
 
-  // Auto-Save-Anzeige
+  // Rendered-Ansicht initial füllen
+  updateRenderedView()
+
+  // Save-Status + Rendered-Ansicht bei Änderungen
   const saveEl = document.getElementById('save-status')
   ydoc.on('update', (_, origin) => {
     document.dispatchEvent(new Event('editor-changed'))
