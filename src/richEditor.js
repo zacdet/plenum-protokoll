@@ -6,7 +6,7 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
   const editor = new Editor({
     element: domElement,
     extensions: [
-      StarterKit.configure({ history: false }),
+      StarterKit.configure({ undoRedo: false }),
       Collaboration.configure({ fragment: yXmlFragment }),
     ],
     autofocus: true,
