@@ -306,6 +306,119 @@ button.btn-secondary {
 .toast.hidden { opacity: 0; pointer-events: none; }
 
 /* =====================
+   Protokoll-Selektor
+   ===================== */
+.protocol-selector {
+  position: relative;
+}
+
+.protocol-trigger {
+  background: var(--color-bg-highlight);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 13px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  cursor: pointer;
+}
+
+.protocol-trigger:hover {
+  border-color: var(--color-accent);
+}
+
+.protocol-trigger .caret {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+#protocol-title-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protocol-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 260px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 500;
+  overflow: hidden;
+}
+
+.protocol-dropdown.hidden {
+  display: none;
+}
+
+.protocol-new-btn {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 13px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.protocol-new-btn:hover {
+  background: var(--color-bg-highlight);
+}
+
+.protocol-divider {
+  height: 1px;
+  background: var(--color-border);
+}
+
+.protocol-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.protocol-item:hover {
+  background: var(--color-bg-highlight);
+}
+
+.protocol-item.active {
+  background: rgba(77, 171, 247, 0.1);
+}
+
+.protocol-item-title {
+  font-size: 13px;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.protocol-item.active .protocol-item-title {
+  color: var(--color-accent);
+}
+
+.protocol-item-date {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* =====================
    Identity Modal
    ===================== */
 .identity-overlay {
