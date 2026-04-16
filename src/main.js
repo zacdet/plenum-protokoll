@@ -91,9 +91,8 @@ async function switchProtocol(newId) {
 function teardown() {
   if (!active) return
   active.provider.destroy()
-  if (active.localProvider) active.localProvider.destroy()
   active.presenceUnsub?.()
-  removePresence()  // Presence-Eintrag in Firebase explizit löschen
+  removePresence()
   active = null
 }
 
@@ -103,18 +102,18 @@ async function mountEditor(roomId, identity) {
   document.getElementById('connection-status').textContent = 'Verbinde…'
   document.getElementById('connection-status').className = 'status-connecting'
 
-  const { ydoc, provider, localProvider, ytext, awareness } = initCollaboration(roomId)
+  const { ydoc, provider, ytext, awareness } = initCollaboration(roomId)
 
   // Präsenz registrieren
   initPresence(roomId, identity)
   const presenceUnsub = watchPresence(roomId, users => renderUserBadges(document.getElementById('user-badges'), users))
 
-  // Warten bis Firebase-Sync UND lokale DB fertig
-  await Promise.all([provider.whenSynced, localProvider.whenSynced])
+  // Warten bis Firebase-Sync fertig
+  await provider.whenSynced
 
   editorContainer.innerHTML = ''
   const editorView = createEditor(editorContainer, ytext, awareness)
-  active = { provider, localProvider, presenceUnsub, editorView, ydoc }
+  active = { provider, presenceUnsub, editorView, ydoc }
 
   initToolbar(document.getElementById('toolbar'), editorView)
 
@@ -125,7 +124,6 @@ async function mountEditor(roomId, identity) {
   const saveEl = document.getElementById('save-status')
   ydoc.on('update', (_, origin) => {
     if (origin === 'firebase') {
-      // Update von anderem Client → Vorschau aktualisieren
       document.dispatchEvent(new Event('editor-changed'))
       return
     }
