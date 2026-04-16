@@ -1,91 +1,212 @@
 import * as Y from 'yjs'
-import { ref, get, push, onChildAdded, off, query, startAfter } from 'firebase/database'
+import {
+  ref,
+  get,
+  set,
+  push,
+  onChildAdded,
+  onDisconnect,
+  onValue,
+  remove,
+  off,
+  query,
+  orderByKey,
+  startAfter,
+  serverTimestamp,
+} from 'firebase/database'
 
-const LOG = '[Firebase-V8]'
+const LOG = '[FirebaseProvider]'
 
 function toBase64(uint8) {
-  return btoa(String.fromCharCode.apply(null, uint8))
+  let s = ''
+  for (let i = 0; i < uint8.length; i++) s += String.fromCharCode(uint8[i])
+  return btoa(s)
 }
 
 function fromBase64(b64) {
   const s = atob(b64)
-  const uint8 = new Uint8Array(s.length)
-  for (let i = 0; i < s.length; i++) uint8[i] = s.charCodeAt(i)
-  return uint8
+  const u = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i)
+  return u
 }
 
+const DEBOUNCE_MS = 250
+
 export class FirebaseProvider {
-  constructor(database, roomId, ydoc) {
-    this.ydoc = ydoc
+  constructor(database, roomId, ydoc, awareness) {
+    this.db = database
     this.roomId = roomId
-    // V8: Reiner Inkrementeller Sync (wie y-webrtc / Google Docs)
+    this.ydoc = ydoc
+    this.awareness = awareness
+    this.clientId = ydoc.clientID
+
     this._updatesRef = ref(database, `rooms/${roomId}/updates_v8`)
-    this._knownKeys = new Set()
-    this._handler = null
+    this._awarenessRef = ref(database, `rooms/${roomId}/awareness/${this.clientId}`)
+    this._awarenessListRef = ref(database, `rooms/${roomId}/awareness`)
 
-    console.log(`${LOG} Verbinde mit Raum: ${roomId}`)
+    this._ownKeys = new Set()
+    this._pendingUpdates = []
+    this._flushTimer = null
+    this._destroyed = false
 
-    this.whenSynced = new Promise(async (resolve) => {
-      // 1. Lade alle existierenden Updates (Historie)
-      try {
-        const snap = await get(this._updatesRef)
-        if (snap.exists()) {
-          const updates = []
-          snap.forEach(child => {
-            this._knownKeys.add(child.key)
-            updates.push(fromBase64(child.val()))
-          })
-          
-          if (updates.length > 0) {
-            this.ydoc.transact(() => {
-              updates.forEach(u => Y.applyUpdate(this.ydoc, u, 'firebase'))
-            }, 'firebase')
-            console.log(`${LOG} ${updates.length} Updates aus Historie geladen`)
-          }
-        } else {
-          console.log(`${LOG} Dokument ist komplett neu`)
+    this._childHandler = null
+    this._awarenessHandler = null
+    this._docUpdateHandler = null
+    this._awarenessUpdateHandler = null
+
+    this.whenSynced = this._init()
+  }
+
+  async _init() {
+    console.log(`${LOG} Verbinde Raum: ${this.roomId}`)
+
+    let lastKey = null
+    try {
+      const snap = await get(this._updatesRef)
+      if (snap.exists()) {
+        const updates = []
+        snap.forEach(child => {
+          updates.push(fromBase64(child.val()))
+          lastKey = child.key
+        })
+        if (updates.length) {
+          this.ydoc.transact(() => {
+            updates.forEach(u => Y.applyUpdate(this.ydoc, u, this))
+          }, this)
+          console.log(`${LOG} ${updates.length} Historie-Updates geladen`)
         }
-      } catch (e) {
-        console.error(`${LOG} Fehler beim Laden der Historie:`, e)
+      } else {
+        console.log(`${LOG} Neues Dokument`)
       }
+    } catch (e) {
+      console.error(`${LOG} Historie-Ladefehler:`, e)
+    }
 
-      // 2. Höre ab jetzt auf NEUE Updates von anderen
-      onChildAdded(this._updatesRef, (child) => {
-        if (this._knownKeys.has(child.key)) return
-        this._knownKeys.add(child.key)
-        
+    if (this._destroyed) return
+
+    const liveRef = lastKey
+      ? query(this._updatesRef, orderByKey(), startAfter(lastKey))
+      : this._updatesRef
+
+    this._childHandler = onChildAdded(liveRef, child => {
+      if (this._ownKeys.has(child.key)) {
+        this._ownKeys.delete(child.key)
+        return
+      }
+      try {
+        Y.applyUpdate(this.ydoc, fromBase64(child.val()), this)
+      } catch (e) {
+        console.error(`${LOG} Apply-Fehler:`, e)
+      }
+    })
+
+    this._docUpdateHandler = (update, origin) => {
+      if (origin === this) return
+      this._pendingUpdates.push(update)
+      this._scheduleFlush()
+    }
+    this.ydoc.on('update', this._docUpdateHandler)
+
+    if (this.awareness) this._setupAwareness()
+
+    console.log(`${LOG} Sync bereit`)
+  }
+
+  _scheduleFlush() {
+    if (this._flushTimer) return
+    this._flushTimer = setTimeout(() => {
+      this._flushTimer = null
+      this._flush()
+    }, DEBOUNCE_MS)
+  }
+
+  _flush() {
+    if (!this._pendingUpdates.length || this._destroyed) return
+    const merged = Y.mergeUpdates(this._pendingUpdates)
+    this._pendingUpdates = []
+
+    const newRef = push(this._updatesRef)
+    this._ownKeys.add(newRef.key)
+    set(newRef, toBase64(merged)).catch(e => {
+      this._ownKeys.delete(newRef.key)
+      console.error(`${LOG} Schreibfehler:`, e)
+    })
+  }
+
+  _setupAwareness() {
+    const writeLocalState = () => {
+      if (this._destroyed) return
+      const state = this.awareness.getLocalState()
+      if (!state) {
+        remove(this._awarenessRef).catch(() => {})
+        return
+      }
+      set(this._awarenessRef, {
+        clientId: this.clientId,
+        state: JSON.stringify(state),
+        ts: serverTimestamp(),
+      }).catch(e => console.error(`${LOG} Awareness-Schreibfehler:`, e))
+    }
+
+    onDisconnect(this._awarenessRef).remove()
+
+    this._awarenessUpdateHandler = (_changes, origin) => {
+      if (origin === this) return
+      writeLocalState()
+    }
+    this.awareness.on('update', this._awarenessUpdateHandler)
+    writeLocalState()
+
+    this._awarenessHandler = onValue(this._awarenessListRef, snap => {
+      const remoteStates = new Map()
+      snap.forEach(child => {
+        const v = child.val()
+        if (!v || v.clientId === this.clientId) return
         try {
-          const bytes = fromBase64(child.val())
-          Y.applyUpdate(this.ydoc, bytes, 'firebase')
-        } catch (e) {
-          console.error(`${LOG} Fehler beim Anwenden des Updates:`, e)
-        }
+          remoteStates.set(v.clientId, JSON.parse(v.state))
+        } catch {}
       })
 
-      // 3. Eigene lokale Änderungen sofort an Firebase senden
-      this._handler = (update, origin) => {
-        // Ignoriere Updates, die wir gerade von Firebase bekommen haben
-        if (origin === 'firebase') return
-        
-        try {
-          const b64 = toBase64(update)
-          push(this._updatesRef, b64).then(ref => {
-            this._knownKeys.add(ref.key) // Eigene Updates als bekannt markieren
-          }).catch(e => console.error(`${LOG} Sende-Fehler:`, e))
-        } catch (e) {
-          console.error(`${LOG} Encoding-Fehler:`, e)
-        }
-      }
-      this.ydoc.on('update', this._handler)
+      const current = this.awareness.getStates()
+      const removed = []
+      const updated = []
+      const added = []
 
-      console.log(`${LOG} Synchronisation abgeschlossen. Editor bereit.`)
-      resolve()
+      current.forEach((_, id) => {
+        if (id !== this.clientId && !remoteStates.has(id)) removed.push(id)
+      })
+      remoteStates.forEach((state, id) => {
+        if (current.has(id)) updated.push(id)
+        else added.push(id)
+        this.awareness.states.set(id, state)
+      })
+      removed.forEach(id => this.awareness.states.delete(id))
+
+      if (added.length || updated.length || removed.length) {
+        this.awareness.emit('change', [{ added, updated, removed }, this])
+        this.awareness.emit('update', [{ added, updated, removed }, this])
+      }
     })
   }
 
   destroy() {
     console.log(`${LOG} Trenne Raum: ${this.roomId}`)
-    if (this._handler) this.ydoc.off('update', this._handler)
+
+    if (this._flushTimer) {
+      clearTimeout(this._flushTimer)
+      this._flushTimer = null
+    }
+    this._flush()
+
+    this._destroyed = true
+
+    if (this._docUpdateHandler) this.ydoc.off('update', this._docUpdateHandler)
+    if (this._awarenessUpdateHandler && this.awareness) {
+      this.awareness.off('update', this._awarenessUpdateHandler)
+    }
+
     off(this._updatesRef)
+    off(this._awarenessListRef)
+    remove(this._awarenessRef).catch(() => {})
   }
 }

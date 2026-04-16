@@ -102,7 +102,7 @@ async function mountEditor(roomId, identity) {
   document.getElementById('connection-status').textContent = 'Verbinde…'
   document.getElementById('connection-status').className = 'status-connecting'
 
-  const { ydoc, provider, ytext, awareness } = initCollaboration(roomId)
+  const { ydoc, provider, ytext, awareness } = initCollaboration(roomId, identity)
 
   // Präsenz registrieren
   initPresence(roomId, identity)
@@ -110,7 +110,6 @@ async function mountEditor(roomId, identity) {
 
   // Warten bis Firebase-Sync fertig
   await provider.whenSynced
-  console.log('[Debug] YText Inhalt nach Sync:', ytext.toString())
 
   editorContainer.innerHTML = ''
   const editorView = createEditor(editorContainer, ytext, awareness)
@@ -124,15 +123,12 @@ async function mountEditor(roomId, identity) {
   // Auto-Save-Anzeige
   const saveEl = document.getElementById('save-status')
   ydoc.on('update', (_, origin) => {
-    if (origin === 'firebase') {
-      document.dispatchEvent(new Event('editor-changed'))
-      return
-    }
+    document.dispatchEvent(new Event('editor-changed'))
+    if (origin === provider) return
     saveEl.textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE', {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     })
     saveEl.className = 'save-status saved'
-    document.dispatchEvent(new Event('editor-changed'))
   })
 }
 
