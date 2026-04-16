@@ -1,18 +1,26 @@
 import * as Y from 'yjs'
-import { ref, set, onValue, off } from 'firebase/database'
+import { ref, get, set, onValue, off } from 'firebase/database'
 
 /**
- * Wandelt Uint8Array sicher in Base64 um
+ * Sicherere Base64-Umwandlung für binäre Daten
  */
 function fromUint8Array(arr) {
-  return btoa(Array.from(arr).map(c => String.fromCharCode(c)).join(''))
+  let binary = ''
+  const len = arr.byteLength
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(arr[i])
+  }
+  return btoa(binary)
 }
 
-/**
- * Wandelt Base64 sicher zurück in Uint8Array
- */
 function toUint8Array(s) {
-  return new Uint8Array(atob(s).split('').map(c => c.charCodeAt(0)))
+  const binaryString = atob(s)
+  const len = binaryString.length
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
 }
 
 export class FirebaseProvider {
@@ -20,54 +28,63 @@ export class FirebaseProvider {
     this.ydoc = ydoc
     this.roomId = roomId
     this._docRef = ref(database, `rooms/${roomId}/doc`)
-    this._handler = null
-    this._saveTimer = null
     this._isApplying = false
+    this._initialSyncDone = false
+    this._saveTimer = null
 
     console.log(`[Firebase] Verbinde mit Raum: ${roomId}`)
 
+    // 1. Initialen Stand laden und auf Updates hören
     this.whenSynced = new Promise((resolve) => {
-      // 1. Auf den aktuellen Stand in der Cloud hören
-      // onValue feuert sofort einmal mit dem aktuellen Stand
       onValue(this._docRef, (snap) => {
         if (this._isApplying) return
         
         if (snap.exists()) {
           const bytes = toUint8Array(snap.val())
           this._isApplying = true
+          // 'firebase' als origin setzen, um Endlosschleifen zu vermeiden
           Y.applyUpdate(this.ydoc, bytes, 'firebase')
           this._isApplying = false
-          console.log(`[Firebase] Cloud-Update erhalten (${bytes.length} bytes)`)
+          console.log(`[Firebase] Daten empfangen (${bytes.length} bytes)`)
         } else {
-          console.log('[Firebase] Dokument ist neu oder leer')
+          console.log('[Firebase] Dokument ist neu')
         }
-        resolve() // Erstes Laden fertig
-      }, { onlyOnce: false })
 
-      // 2. Eigene Änderungen speichern (mit 500ms Verzögerung)
-      this._handler = (update, origin) => {
-        // Ignoriere Updates, die wir gerade von Firebase erhalten haben
-        if (origin === 'firebase') return
-
-        console.log('[Firebase] Änderung registriert, plane Speicherung...')
-        clearTimeout(this._saveTimer)
-        this._saveTimer = setTimeout(() => {
-          this._save()
-        }, 500)
-      }
-      this.ydoc.on('update', this._handler)
+        if (!this._initialSyncDone) {
+          this._initialSyncDone = true
+          console.log('[Firebase] Initialer Sync fertig - Speichern aktiviert')
+          resolve()
+        }
+      })
     })
+
+    // 2. Lokale Änderungen speichern
+    this._handler = (update, origin) => {
+      // WICHTIG: Nur speichern, wenn:
+      // - das Update NICHT von Firebase kommt
+      // - wir mit dem ersten Laden FERTIG sind (Schutz vor Überschreiben beim Start)
+      if (origin === 'firebase' || !this._initialSyncDone) return
+
+      clearTimeout(this._saveTimer)
+      this._saveTimer = setTimeout(() => {
+        this._save()
+      }, 500) // 500ms warten nach dem Tippen
+    }
+    
+    this.ydoc.on('update', this._handler)
   }
 
   _save() {
     try {
-      const fullState = Y.encodeStateAsUpdate(this.ydoc)
-      const encoded = fromUint8Array(fullState)
-      set(this._docRef, encoded).then(() => {
-        console.log('[Firebase] ✓ Erfolgreich in Cloud gespeichert')
-      }).catch(err => {
-        console.error('[Firebase] ✗ Speicherfehler:', err)
-      })
+      const state = Y.encodeStateAsUpdate(this.ydoc)
+      const encoded = fromUint8Array(state)
+      
+      // Sicherheits-Check: Nicht speichern, wenn wir noch gar nicht synchron sind
+      if (!this._initialSyncDone) return
+
+      set(this._docRef, encoded)
+        .then(() => console.log('[Firebase] ✓ Gespeichert'))
+        .catch(err => console.error('[Firebase] ✗ Fehler:', err))
     } catch (e) {
       console.error('[Firebase] Fehler beim Kodieren:', e)
     }
