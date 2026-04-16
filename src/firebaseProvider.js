@@ -1,92 +1,98 @@
 import * as Y from 'yjs'
 import { ref, get, set, onValue, off } from 'firebase/database'
 
+// V5 - Absolute Robustheit
+const LOG_PREFIX = '[Firebase-V5]'
+
 /**
- * Sicherere Base64-Umwandlung für binäre Daten
+ * Sicherste Methode für Uint8Array <-> Base64
  */
-function fromUint8Array(arr) {
-  let binary = ''
-  const len = arr.byteLength
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(arr[i])
-  }
-  return btoa(binary)
+function toBase64(uint8) {
+  return btoa(String.fromCharCode.apply(null, uint8))
 }
 
-function toUint8Array(s) {
-  const binaryString = atob(s)
-  const len = binaryString.length
-  const bytes = new Uint8Array(len)
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-  return bytes
+function fromBase64(b64) {
+  const s = atob(b64)
+  const uint8 = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) uint8[i] = s.charCodeAt(i)
+  return uint8
 }
 
 export class FirebaseProvider {
   constructor(database, roomId, ydoc) {
     this.ydoc = ydoc
     this.roomId = roomId
-    this._docRef = ref(database, `rooms/${roomId}/doc`)
-    this._isApplying = false
-    this._initialSyncDone = false
+    // Wir nutzen einen neuen Pfad 'doc_v5', um Altlasten zu vermeiden
+    this._docRef = ref(database, `rooms/${roomId}/doc_v5`)
+    this._handler = null
     this._saveTimer = null
+    this._isApplying = false
+    this._hasLoadedInitial = false
 
-    console.log(`[Firebase] Verbinde mit Raum: ${roomId}`)
+    console.log(`${LOG_PREFIX} Initialisiere für Raum: ${roomId}`)
 
-    // 1. Initialen Stand laden und auf Updates hören
     this.whenSynced = new Promise((resolve) => {
-      onValue(this._docRef, (snap) => {
-        if (this._isApplying) return
-        
+      // 1. Initialen Stand einmalig laden
+      get(this._docRef).then(snap => {
         if (snap.exists()) {
-          const bytes = toUint8Array(snap.val())
+          const bytes = fromBase64(snap.val())
           this._isApplying = true
-          // 'firebase' als origin setzen, um Endlosschleifen zu vermeiden
-          Y.applyUpdate(this.ydoc, bytes, 'firebase')
+          Y.applyUpdate(this.ydoc, bytes, 'firebase-init')
           this._isApplying = false
-          console.log(`[Firebase] Daten empfangen (${bytes.length} bytes)`)
+          console.log(`${LOG_PREFIX} Historie geladen: ${bytes.length} Bytes`)
         } else {
-          console.log('[Firebase] Dokument ist neu')
+          console.log(`${LOG_PREFIX} Kein Dokument in der Cloud gefunden (neu)`)
         }
+        
+        this._hasLoadedInitial = true
+        
+        // 2. Echtzeit-Updates ab jetzt
+        onValue(this._docRef, (s) => {
+          if (this._isApplying) return
+          if (s.exists()) {
+            const b = fromBase64(s.val())
+            this._isApplying = true
+            Y.applyUpdate(this.ydoc, b, 'firebase-sync')
+            this._isApplying = false
+            console.log(`${LOG_PREFIX} Live-Update empfangen`)
+          }
+        })
 
-        if (!this._initialSyncDone) {
-          this._initialSyncDone = true
-          console.log('[Firebase] Initialer Sync fertig - Speichern aktiviert')
-          resolve()
+        // 3. Lokale Änderungen speichern
+        this._handler = (update, origin) => {
+          // Nur speichern, wenn wir geladen haben UND es nicht von Firebase kommt
+          if (!this._hasLoadedInitial || origin === 'firebase-init' || origin === 'firebase-sync') return
+
+          console.log(`${LOG_PREFIX} Lokale Änderung erkannt, plane Speicherung...`)
+          clearTimeout(this._saveTimer)
+          this._saveTimer = setTimeout(() => this._performSave(), 1000)
         }
+        this.ydoc.on('update', this._handler)
+        
+        resolve()
+      }).catch(err => {
+        console.error(`${LOG_PREFIX} KRITISCHER LADEFEHLER:`, err)
+        this._hasLoadedInitial = true
+        resolve()
       })
     })
-
-    // 2. Lokale Änderungen speichern
-    this._handler = (update, origin) => {
-      // WICHTIG: Nur speichern, wenn:
-      // - das Update NICHT von Firebase kommt
-      // - wir mit dem ersten Laden FERTIG sind (Schutz vor Überschreiben beim Start)
-      if (origin === 'firebase' || !this._initialSyncDone) return
-
-      clearTimeout(this._saveTimer)
-      this._saveTimer = setTimeout(() => {
-        this._save()
-      }, 500) // 500ms warten nach dem Tippen
-    }
-    
-    this.ydoc.on('update', this._handler)
   }
 
-  _save() {
+  async _performSave() {
+    if (!this._hasLoadedInitial) return
+    
     try {
       const state = Y.encodeStateAsUpdate(this.ydoc)
-      const encoded = fromUint8Array(state)
+      // Sicherheitscheck: Ein komplett leeres Dokument (nur Header) 
+      // überschreibt nichts, wenn wir schon Text haben.
+      const textLength = this.ydoc.getText('protokoll').toString().length
+      console.log(`${LOG_PREFIX} Speichere in Cloud... (Text-Länge: ${textLength})`)
       
-      // Sicherheits-Check: Nicht speichern, wenn wir noch gar nicht synchron sind
-      if (!this._initialSyncDone) return
-
-      set(this._docRef, encoded)
-        .then(() => console.log('[Firebase] ✓ Gespeichert'))
-        .catch(err => console.error('[Firebase] ✗ Fehler:', err))
+      const b64 = toBase64(state)
+      await set(this._docRef, b64)
+      console.log(`${LOG_PREFIX} ✓ Dokument dauerhaft gespeichert`)
     } catch (e) {
-      console.error('[Firebase] Fehler beim Kodieren:', e)
+      console.error(`${LOG_PREFIX} SPEICHERFEHLER:`, e)
     }
   }
 
