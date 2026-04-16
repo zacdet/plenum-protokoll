@@ -1,5 +1,5 @@
 import { createProtocol, watchProtocolList } from './protocols.js'
-import { showToast } from './export.js'
+import { showToast, downloadWiki } from './export.js'
 
 export function initProtocolSelector(containerEl, initialId, onSwitch) {
   containerEl.innerHTML = ''
@@ -51,7 +51,7 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
 
   watchProtocolList(list => {
     renderDropdown(list)
-    const current = list.find(p => p.id === currentId)
+    const current = list.find(p => p.id === currentId && !p.isBackup)
     const labelEl = document.getElementById('protocol-title-label')
     if (labelEl) labelEl.textContent = current ? current.title : currentId
   })
@@ -65,31 +65,65 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
     newBtn.addEventListener('click', e => { e.stopPropagation(); handleNew() })
     dropdown.appendChild(newBtn)
 
-    if (list.length > 0) {
-      const div = document.createElement('div')
-      div.className = 'protocol-divider'
-      dropdown.appendChild(div)
+    const regular = list.filter(p => !p.isBackup)
+    const backups  = list.filter(p =>  p.isBackup)
+
+    if (regular.length > 0) {
+      dropdown.appendChild(dividerEl())
+      regular.forEach(protocol => dropdown.appendChild(editableItem(protocol)))
     }
 
-    list.forEach(protocol => {
-      const item = document.createElement('button')
-      item.className = 'protocol-item' + (protocol.id === currentId ? ' active' : '')
-      item.dataset.id = protocol.id
-      item.innerHTML = `
-        <span class="protocol-item-title">${esc(protocol.title)}</span>
-        <span class="protocol-item-date">${fmtDate(protocol.createdAt)}</span>
-      `
-      item.addEventListener('click', e => {
-        e.stopPropagation()
-        dropdown.classList.add('hidden')
-        open = false
-        if (protocol.id !== currentId) {
-          setCurrentId(protocol.id)
-          onSwitch(protocol.id)
-        }
-      })
-      dropdown.appendChild(item)
+    if (backups.length > 0) {
+      dropdown.appendChild(dividerEl())
+      const lbl = document.createElement('div')
+      lbl.className = 'protocol-section-label'
+      lbl.textContent = 'Backups'
+      dropdown.appendChild(lbl)
+      backups.forEach(protocol => dropdown.appendChild(backupItem(protocol)))
+    }
+  }
+
+  function dividerEl() {
+    const d = document.createElement('div')
+    d.className = 'protocol-divider'
+    return d
+  }
+
+  function editableItem(protocol) {
+    const item = document.createElement('button')
+    item.className = 'protocol-item' + (protocol.id === currentId ? ' active' : '')
+    item.dataset.id = protocol.id
+    item.innerHTML = `
+      <span class="protocol-item-title">${esc(protocol.title)}</span>
+      <span class="protocol-item-date">${fmtDate(protocol.createdAt)}</span>
+    `
+    item.addEventListener('click', e => {
+      e.stopPropagation()
+      dropdown.classList.add('hidden')
+      open = false
+      if (protocol.id !== currentId) {
+        setCurrentId(protocol.id)
+        onSwitch(protocol.id)
+      }
     })
+    return item
+  }
+
+  function backupItem(protocol) {
+    const item = document.createElement('button')
+    item.className = 'protocol-item protocol-item--backup'
+    item.dataset.id = protocol.id
+    item.innerHTML = `
+      <span class="protocol-item-title">⬇ ${esc(protocol.title)}</span>
+      <span class="protocol-item-date">${fmtDate(protocol.createdAt)}</span>
+    `
+    item.addEventListener('click', e => {
+      e.stopPropagation()
+      dropdown.classList.add('hidden')
+      open = false
+      downloadWiki(protocol.snapshotContent || '', protocol.id)
+    })
+    return item
   }
 
   async function handleNew() {

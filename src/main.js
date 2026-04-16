@@ -5,9 +5,9 @@ import { createRichEditor, getEditorWikiContent } from './richEditor.js'
 import { renderUserBadges } from './awareness.js'
 import { initPresence, watchPresence, removePresence } from './presence.js'
 import { initToolbar } from './toolbar.js'
-import { downloadWiki } from './export.js'
+import { downloadWiki, showToast } from './export.js'
 import { initProtocolSelector } from './protocolSelector.js'
-import { loadProtocolList, createProtocol } from './protocols.js'
+import { loadProtocolList, createProtocol, createBackup } from './protocols.js'
 
 let active    = null   // { provider, presenceUnsub, editor, ydoc }
 let switching = false
@@ -35,6 +35,16 @@ async function main() {
   // Header-Buttons
   document.getElementById('btn-export-download').addEventListener('click', () => {
     if (active?.editor) downloadWiki(getEditorWikiContent(active.editor), getRoomId())
+  })
+
+  document.getElementById('btn-backup').addEventListener('click', async () => {
+    if (!active?.editor) return
+    const wikiContent = getEditorWikiContent(active.editor)
+    const currentTitle = document.getElementById('protocol-title-label')?.textContent || 'Protokoll'
+    const date = new Date().toLocaleDateString('de-DE')
+    const title = `Backup: ${currentTitle} (${date})`
+    await createBackup(title, wikiContent)
+    showToast(`Backup "${title}" gespeichert`)
   })
   document.getElementById('btn-identity').addEventListener('click', () => {
     localStorage.removeItem('plenum-protokoll-identity')

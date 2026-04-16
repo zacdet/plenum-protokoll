@@ -18,6 +18,17 @@ export async function createProtocol(title) {
   return id
 }
 
+export async function createBackup(title, wikiContent) {
+  const id = generateProtocolId()
+  await set(ref(db, `protocols/${id}`), {
+    title,
+    createdAt: Date.now(),
+    isBackup: true,
+    snapshotContent: wikiContent,
+  })
+  return id
+}
+
 export async function loadProtocolList() {
   const snap = await get(ref(db, 'protocols'))
   if (!snap.exists()) return []

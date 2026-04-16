@@ -28,7 +28,7 @@ function tiptapToWiki(doc) {
   return doc.content.map(node => blockToWiki(node)).filter(s => s !== null).join('\n')
 }
 
-function blockToWiki(node) {
+function blockToWiki(node, depth = 1) {
   switch (node.type) {
     case 'heading': {
       const m = '='.repeat(node.attrs?.level ?? 2)
@@ -37,13 +37,9 @@ function blockToWiki(node) {
     case 'paragraph':
       return inlineToWiki(node.content)
     case 'bulletList':
-      return (node.content ?? []).map(li =>
-        '* ' + listItemText(li)
-      ).join('\n')
+      return (node.content ?? []).map(li => listItemToWiki(li, '*', depth)).join('\n')
     case 'orderedList':
-      return (node.content ?? []).map(li =>
-        '# ' + listItemText(li)
-      ).join('\n')
+      return (node.content ?? []).map(li => listItemToWiki(li, '#', depth)).join('\n')
     case 'blockquote':
       return (node.content ?? []).map(n => ': ' + inlineToWiki(n.content)).join('\n')
     case 'horizontalRule':
@@ -55,8 +51,21 @@ function blockToWiki(node) {
   }
 }
 
-function listItemText(li) {
-  return (li.content ?? []).map(n => inlineToWiki(n.content)).join('')
+function listItemToWiki(li, marker, depth) {
+  const prefix = marker.repeat(depth)
+  const lines = []
+  for (const child of li.content ?? []) {
+    if (child.type === 'paragraph') {
+      lines.push(`${prefix} ${inlineToWiki(child.content)}`)
+    } else if (child.type === 'bulletList') {
+      for (const nested of child.content ?? [])
+        lines.push(listItemToWiki(nested, '*', depth + 1))
+    } else if (child.type === 'orderedList') {
+      for (const nested of child.content ?? [])
+        lines.push(listItemToWiki(nested, '#', depth + 1))
+    }
+  }
+  return lines.join('\n')
 }
 
 function inlineToWiki(nodes = []) {
