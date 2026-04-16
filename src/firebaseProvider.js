@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { ref, push, onChildAdded, get, off } from 'firebase/database'
+import { ref, push, onChildAdded, off } from 'firebase/database'
 
 function encode(bytes) {
   let s = ''
@@ -18,70 +18,67 @@ function decode(b64) {
   }
 }
 
-/**
- * FirebaseProvider: Synchronisiert Yjs inkrementell mit Firebase
- */
 export class FirebaseProvider {
   constructor(database, roomId, ydoc) {
     this.ydoc = ydoc
     this.roomId = roomId
     this._opsRef = ref(database, `rooms/${roomId}/updates`)
     this._knownKeys = new Set()
-    this._handler = null
-
-    console.log(`[Firebase] Verbinde mit Raum: ${roomId}`)
-    this.whenSynced = this._init()
-  }
-
-  async _init() {
-    // 1. Historie laden (alle existierenden Updates)
-    try {
-      const snap = await get(this._opsRef)
-      if (snap.exists()) {
-        const data = snap.val()
-        const keys = Object.keys(data).sort()
-        console.log(`[Firebase] Lade Historie: ${keys.length} Updates`)
-        
-        // WICHTIG: Alle Historien-Updates in einer Transaktion mit 'firebase' origin anwenden
-        this.ydoc.transact(() => {
-          keys.forEach(key => {
-            this._knownKeys.add(key)
-            Y.applyUpdate(this.ydoc, decode(data[key]), 'firebase')
-          })
-        }, 'firebase')
-      }
-    } catch (e) {
-      console.error('[Firebase] Ladefehler:', e)
-    }
-
-    // 2. Echtzeit-Updates ab jetzt
-    onChildAdded(this._opsRef, (child) => {
-      if (this._knownKeys.has(child.key)) return
-      this._knownKeys.add(child.key)
+    
+    console.log(`[Firebase] Initialisiere Raum: ${roomId}`)
+    
+    // Wir nutzen ein Promise, das sich auflöst, sobald wir verbunden sind
+    this.whenSynced = new Promise((resolve) => {
+      let isFirstSync = true
       
-      const update = decode(child.val())
-      // WICHTIG: 'firebase' als origin, damit der lokale Handler es nicht zurück-pusht
-      Y.applyUpdate(this.ydoc, update, 'firebase')
-      console.log('[Firebase] Remote-Update empfangen')
+      // onChildAdded feuert erst für alle existierenden Einträge (Historie)
+      // und bleibt dann aktiv für neue (Echtzeit).
+      onChildAdded(this._opsRef, (child) => {
+        if (this._knownKeys.has(child.key)) return
+        this._knownKeys.add(child.key)
+        
+        const update = decode(child.val())
+        if (update.length > 0) {
+          // Wir wenden das Update mit origin 'firebase' an
+          Y.applyUpdate(this.ydoc, update, 'firebase')
+          
+          if (!isFirstSync) {
+            console.log('[Firebase] Remote-Update empfangen und angewendet')
+          }
+        }
+      })
+
+      // Wir gehen davon aus, dass wir nach einer kurzen Zeit "bereit" sind
+      // (Firebase hat keine explizite "EndOfInitialData" Flag für onChildAdded)
+      setTimeout(() => {
+        isFirstSync = false
+        console.log(`[Firebase] Raum bereit. Aktuelle Länge: ${this.ydoc.getText('protokoll').toString().length}`)
+        resolve()
+      }, 1000)
     })
 
-    // 3. Lokale Änderungen an die Cloud senden
+    // Lokale Änderungen abfangen
     this._handler = (update, origin) => {
-      // Wenn das Update von Firebase selbst kommt (origin === 'firebase'), ignorieren
-      if (origin === 'firebase' || origin === this) return
-
-      console.log('[Firebase] Sende lokales Update...')
-      push(this._opsRef, encode(update)).then(ref => {
-        this._knownKeys.add(ref.key)
-      }).catch(e => console.error('[Firebase] Push fehlgeschlagen:', e))
+      // NUR senden, wenn es NICHT von Firebase kommt
+      if (origin !== 'firebase') {
+        console.log('[Firebase] Sende lokale Änderung...')
+        const encoded = encode(update)
+        push(this._opsRef, encoded).then(ref => {
+          this._knownKeys.add(ref.key)
+        }).catch(err => {
+          console.error('[Firebase] Sende-Fehler:', err)
+        })
+      }
     }
-    this.ydoc.on('update', this._handler)
     
-    console.log('[Firebase] Bereit')
+    this.ydoc.on('update', this._handler)
   }
 
   destroy() {
-    if (this._handler) this.ydoc.off('update', this._handler)
+    console.log(`[Firebase] Verlasse Raum: ${this.roomId}`)
+    if (this._handler) {
+      this.ydoc.off('update', this._handler)
+    }
     off(this._opsRef)
   }
 }
