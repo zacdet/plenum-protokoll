@@ -8,7 +8,6 @@ import { initToolbar } from './toolbar.js'
 import { downloadWiki } from './export.js'
 import { initProtocolSelector } from './protocolSelector.js'
 import { loadProtocolList, createProtocol } from './protocols.js'
-import { renderMediaWiki } from './preview.js'
 
 let active    = null   // { provider, presenceUnsub, editor, ydoc }
 let switching = false
