@@ -110,6 +110,7 @@ async function mountEditor(roomId, identity) {
 
   // Warten bis Firebase-Sync fertig
   await provider.whenSynced
+  console.log('[Debug] YText Inhalt nach Sync:', ytext.toString())
 
   editorContainer.innerHTML = ''
   const editorView = createEditor(editorContainer, ytext, awareness)
