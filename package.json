@@ -1,0 +1,24 @@
+{
+  "name": "plenum-protokoll",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "yjs": "^13.6.20",
+    "y-webrtc": "^10.3.0",
+    "y-indexeddb": "^9.0.12",
+    "y-protocols": "^1.0.6",
+    "@codemirror/view": "^6.35.3",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/language": "^6.10.8",
+    "y-codemirror.next": "^0.3.5"
+  },
+  "devDependencies": {
+    "vite": "^5.4.14"
+  }
+}

@@ -1,0 +1,32 @@
+/* Nutzer-Badges */
+#user-badges {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.user-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--badge-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  cursor: default;
+  user-select: none;
+  transition: transform 0.15s;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+.user-badge.local {
+  box-shadow: 0 0 0 2px var(--color-bg-secondary), 0 0 0 4px var(--badge-color);
+}
+
+.user-badge:hover {
+  transform: scale(1.1);
+  z-index: 1;
+}

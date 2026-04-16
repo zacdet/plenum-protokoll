@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plenum Protokoll</title>
+  <link rel="stylesheet" href="../styles/main.css" />
+  <link rel="stylesheet" href="../styles/editor.css" />
+  <link rel="stylesheet" href="../styles/awareness.css" />
+</head>
+<body>
+  <header id="header">
+    <div id="header-left">
+      <h1>Plenum Protokoll</h1>
+      <span id="room-label"></span>
+    </div>
+    <div id="header-center">
+      <div id="user-badges"></div>
+    </div>
+    <div id="header-right">
+      <span id="connection-status" class="status-connecting">Verbinde…</span>
+      <button id="btn-share">Link kopieren</button>
+      <button id="btn-export-clipboard">Kopieren</button>
+      <button id="btn-export-download">Download .wiki</button>
+      <button id="btn-identity" title="Name ändern">✎</button>
+    </div>
+  </header>
+
+  <div id="toolbar"></div>
+
+  <main id="editor-container">
+    <div id="editor"></div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="../src/main.js"></script>
+</body>
+</html>
