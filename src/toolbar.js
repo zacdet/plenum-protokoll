@@ -1,11 +1,10 @@
 import { TEMPLATE_GROUPS } from './templates/index.js'
-import { insertAtCursor, wrapSelection } from './editor.js'
 
-let _view = null
+let _editor = null
 
-export function initToolbar(containerEl, editorView) {
-  _view = editorView
-  containerEl.innerHTML = ''  // bei Protokollwechsel neu aufbauen
+export function initToolbar(containerEl, editor) {
+  _editor = editor
+  containerEl.innerHTML = ''
 
   TEMPLATE_GROUPS.forEach(group => {
     const groupEl = document.createElement('div')
@@ -30,11 +29,11 @@ export function initToolbar(containerEl, editorView) {
 }
 
 async function handleClick(btn) {
-  if (!_view) return
+  if (!_editor) return
 
-  // Formatierungs-Button: markierten Text umschließen
-  if (btn.wrap) {
-    wrapSelection(_view, btn.wrap[0], btn.wrap[1])
+  // Direkter TipTap-Befehl
+  if (btn.cmd) {
+    btn.cmd(_editor)
     return
   }
 
@@ -42,12 +41,14 @@ async function handleClick(btn) {
   if (btn.prompt?.length) {
     const params = await showPromptModal(btn.label, btn.prompt)
     if (params === null) return
-    insertAtCursor(_view, btn.template(params))
+    const content = btn.template(params)
+    _editor.chain().focus().insertContent(btn.isJson ? content : content).run()
     return
   }
 
   // Template ohne Parameter
-  insertAtCursor(_view, btn.template({}))
+  const content = btn.template({})
+  _editor.chain().focus().insertContent(content).run()
 }
 
 function showPromptModal(title, fields) {

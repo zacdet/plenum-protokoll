@@ -1,7 +1,7 @@
-import { getRoomId, setRoomId, generateShareLink } from './room.js'
+import { getRoomId, setRoomId } from './room.js'
 import { requireIdentity } from './identity.js'
 import { initCollaboration } from './collaboration.js'
-import { createEditor, getContent } from './editor.js'
+import { createRichEditor, getEditorWikiContent } from './richEditor.js'
 import { renderUserBadges } from './awareness.js'
 import { initPresence, watchPresence, removePresence } from './presence.js'
 import { initToolbar } from './toolbar.js'
@@ -10,7 +10,7 @@ import { initProtocolSelector } from './protocolSelector.js'
 import { loadProtocolList, createProtocol } from './protocols.js'
 import { renderMediaWiki } from './preview.js'
 
-let active    = null
+let active    = null   // { provider, presenceUnsub, editor, ydoc }
 let switching = false
 let selectorSetCurrentId = null
 
@@ -35,36 +35,35 @@ async function main() {
 
   // Header-Buttons
   document.getElementById('btn-export-download').addEventListener('click', () => {
-    if (active?.editorView) downloadWiki(getContent(active.editorView), getRoomId())
+    if (active?.editor) downloadWiki(getEditorWikiContent(active.editor), getRoomId())
   })
   document.getElementById('btn-identity').addEventListener('click', () => {
     localStorage.removeItem('plenum-protokoll-identity')
     location.reload()
   })
 
-  // Vorschau-Panel (gerendertes HTML)
-  const previewBtn  = document.getElementById('btn-preview')
-  const workspace   = document.getElementById('workspace')
-  let previewOpen = false
+  // Quelltext-Panel (Wiki-Syntax-Vorschau)
+  const quelltextBtn = document.getElementById('btn-quelltext')
+  const workspace    = document.getElementById('workspace')
+  let quelltextOpen  = false
 
-  previewBtn.addEventListener('click', () => {
-    previewOpen = !previewOpen
-    workspace.classList.toggle('with-preview', previewOpen)
-    previewBtn.classList.toggle('active', previewOpen)
-    if (previewOpen) updatePreview()
+  quelltextBtn.addEventListener('click', () => {
+    quelltextOpen = !quelltextOpen
+    workspace.classList.toggle('with-quelltext', quelltextOpen)
+    quelltextBtn.classList.toggle('active', quelltextOpen)
+    if (quelltextOpen) updateQuelltext()
   })
 
   document.addEventListener('editor-changed', () => {
-    if (previewOpen) updatePreview()
+    if (quelltextOpen) updateQuelltext()
   })
 }
 
-function updatePreview() {
-  if (!active?.editorView) return
-  const el = document.getElementById('rendered-content')
+function updateQuelltext() {
+  if (!active?.editor) return
+  const el = document.getElementById('quelltext-content')
   if (!el) return
-  const html = renderMediaWiki(getContent(active.editorView))
-  el.innerHTML = html || '<p class="rendered-placeholder">Dokument ist leer.</p>'
+  el.textContent = getEditorWikiContent(active.editor)
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -112,6 +111,7 @@ function teardown() {
   active.provider.destroy()
   active.presenceUnsub?.()
   removePresence()
+  active.editor.destroy()
   active = null
 }
 
@@ -123,7 +123,7 @@ async function mountEditor(roomId, identity) {
   document.getElementById('connection-status').textContent = 'Verbinde…'
   document.getElementById('connection-status').className = 'status-connecting'
 
-  const { ydoc, provider, ytext, awareness } = initCollaboration(roomId, identity)
+  const { ydoc, provider, yXmlFragment, awareness } = initCollaboration(roomId, identity)
 
   initPresence(roomId, identity)
   const presenceUnsub = watchPresence(roomId, users =>
@@ -133,18 +133,18 @@ async function mountEditor(roomId, identity) {
   await provider.whenSynced
 
   editorEl.innerHTML = ''
-  const editorView = createEditor(editorEl, ytext, awareness)
-  active = { provider, presenceUnsub, editorView, ydoc }
+  const editor = createRichEditor(editorEl, yXmlFragment, awareness, identity)
+  active = { provider, presenceUnsub, editor, ydoc }
 
-  initToolbar(document.getElementById('toolbar'), editorView)
+  initToolbar(document.getElementById('toolbar'), editor)
 
   document.getElementById('connection-status').textContent = 'Verbunden'
   document.getElementById('connection-status').className = 'status-connected'
 
   const saveEl = document.getElementById('save-status')
-  ydoc.on('update', (_, origin) => {
+  editor.on('update', ({ transaction }) => {
     document.dispatchEvent(new Event('editor-changed'))
-    if (origin === provider) return
+    if (!transaction.docChanged) return
     saveEl.textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE', {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     })
