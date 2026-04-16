@@ -8,26 +8,23 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 const SIGNALING_SERVERS = [
   'wss://signaling.yjs.dev',
   'wss://y-webrtc-signaling-eu.fly.dev',
+  'wss://y-webrtc-signaling-us.fly.dev',
 ]
 
 export function initCollaboration(roomId) {
   const ydoc = new Y.Doc()
   const ytext = ydoc.getText('protokoll')
 
-  // Lokale Persistenz (Offline-Fallback)
+  // Lokale Persistenz – speichert automatisch jeden Keystroke in IndexedDB
   const persistence = new IndexeddbPersistence(roomId, ydoc)
 
-  // WebRTC P2P Sync
+  // WebRTC P2P Sync (nutzt BroadcastChannel für gleichen Browser automatisch)
   const provider = new WebrtcProvider(roomId, ydoc, {
     signaling: SIGNALING_SERVERS,
+    maxConns: 4,
   })
 
   const awareness = provider.awareness
 
   return { ydoc, provider, persistence, ytext, awareness }
-}
-
-export function getConnectionStatus(provider) {
-  if (provider.connected) return 'connected'
-  return 'connecting'
 }

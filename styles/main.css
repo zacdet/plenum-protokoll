@@ -377,3 +377,30 @@ button.btn-secondary {
   font-size: 14px;
   border-radius: var(--radius);
 }
+
+/* =====================
+   Auto-Save-Anzeige
+   ===================== */
+.save-status {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  transition: color 0.3s;
+}
+
+.save-status.saved {
+  color: var(--color-success);
+}
+
+/* =====================
+   Editor Loading
+   ===================== */
+.editor-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}

@@ -17,31 +17,51 @@ async function main() {
   const roomId = getRoomId()
   document.getElementById('room-label').textContent = roomId
 
-  // 3. Yjs + WebRTC
-  const { provider, ytext, awareness } = initCollaboration(roomId)
+  // 3. Yjs + WebRTC + IndexedDB
+  const { ydoc, provider, persistence, ytext, awareness } = initCollaboration(roomId)
 
   // 4. Awareness mit Identität
   initAwareness(awareness, identity)
   renderUserBadges(document.getElementById('user-badges'), awareness)
 
-  // 5. Editor
-  const editorView = createEditor(document.getElementById('editor'), ytext, awareness)
+  // 5. Editor (erst nach IndexedDB-Sync mounten → vorhandener Inhalt direkt sichtbar)
+  const editorContainer = document.getElementById('editor')
+  editorContainer.innerHTML = '<div class="editor-loading">Lade gespeicherten Inhalt…</div>'
+
+  await new Promise(resolve => persistence.once('synced', resolve))
+
+  editorContainer.innerHTML = ''
+  const editorView = createEditor(editorContainer, ytext, awareness)
 
   // 6. Toolbar
   initToolbar(document.getElementById('toolbar'), editorView)
 
-  // 7. Verbindungsstatus
+  // 7. Verbindungsstatus + Peer-Anzahl
   const statusEl = document.getElementById('connection-status')
+
   function updateStatus() {
-    const connected = provider.connected
-    statusEl.textContent = connected ? 'Verbunden' : 'Verbinde…'
-    statusEl.className = connected ? 'status-connected' : 'status-connecting'
+    const peers = provider.awareness.getStates().size - 1  // eigene State nicht mitzählen
+    if (peers > 0) {
+      statusEl.textContent = peers === 1 ? '1 weiterer online' : `${peers} weitere online`
+      statusEl.className = 'status-connected'
+    } else {
+      statusEl.textContent = provider.connected ? 'Alleine online' : 'Verbinde…'
+      statusEl.className = provider.connected ? 'status-connected' : 'status-connecting'
+    }
   }
+
   provider.on('status', updateStatus)
-  provider.on('peers', updateStatus)
+  awareness.on('change', updateStatus)
   updateStatus()
 
-  // 8. Header-Buttons
+  // 8. Auto-Save-Anzeige (IndexedDB speichert automatisch jeden Keystroke)
+  const saveEl = document.getElementById('save-status')
+  ydoc.on('update', () => {
+    saveEl.textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    saveEl.className = 'save-status saved'
+  })
+
+  // 9. Header-Buttons
   document.getElementById('btn-share').addEventListener('click', async () => {
     await copyToClipboard(generateShareLink())
     showToast('Link kopiert!')
@@ -55,7 +75,6 @@ async function main() {
     downloadWiki(getContent(editorView), roomId)
   })
 
-  // 9. Identität ändern
   document.getElementById('btn-identity').addEventListener('click', () => {
     localStorage.removeItem('plenum-protokoll-identity')
     location.reload()
