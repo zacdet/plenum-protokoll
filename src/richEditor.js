@@ -1,7 +1,6 @@
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
 
 export function createRichEditor(domElement, yXmlFragment, awareness, identity) {
   const editor = new Editor({
@@ -9,12 +8,6 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
     extensions: [
       StarterKit.configure({ history: false }),
       Collaboration.configure({ fragment: yXmlFragment }),
-      CollaborationCursor.configure({
-        provider: { awareness },
-        user: identity
-          ? { name: identity.name, color: identity.color }
-          : { name: 'Anonym', color: '#888' },
-      }),
     ],
     autofocus: true,
     editorProps: {
