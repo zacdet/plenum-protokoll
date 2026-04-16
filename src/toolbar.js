@@ -1,29 +1,27 @@
-/**
- * Toolbar: Buttons für alle Protokoll-Elemente
- */
 import { TEMPLATE_GROUPS } from './templates/index.js'
-import { insertAtCursor } from './editor.js'
+import { insertAtCursor, wrapSelection } from './editor.js'
 
-let _editorView = null
+let _view = null
 
 export function initToolbar(containerEl, editorView) {
-  _editorView = editorView
+  _view = editorView
+  containerEl.innerHTML = ''  // bei Protokollwechsel neu aufbauen
 
   TEMPLATE_GROUPS.forEach(group => {
     const groupEl = document.createElement('div')
     groupEl.className = 'toolbar-group'
 
-    const labelEl = document.createElement('span')
-    labelEl.className = 'toolbar-group-label'
-    labelEl.textContent = group.label
-    groupEl.appendChild(labelEl)
+    const label = document.createElement('span')
+    label.className = 'toolbar-group-label'
+    label.textContent = group.label
+    groupEl.appendChild(label)
 
     group.buttons.forEach(btn => {
       const button = document.createElement('button')
       button.className = 'toolbar-btn'
       button.textContent = btn.label
-      button.title = btn.label
-      button.addEventListener('click', () => handleButtonClick(btn))
+      button.title = btn.tooltip || btn.label
+      button.addEventListener('click', () => handleClick(btn))
       groupEl.appendChild(button)
     })
 
@@ -31,16 +29,25 @@ export function initToolbar(containerEl, editorView) {
   })
 }
 
-async function handleButtonClick(btn) {
-  if (btn.prompt && btn.prompt.length > 0) {
-    const params = await showPromptModal(btn.label, btn.prompt)
-    if (params === null) return // Abgebrochen
-    const text = btn.template(params)
-    insertAtCursor(_editorView, text)
-  } else {
-    const text = btn.template({})
-    insertAtCursor(_editorView, text)
+async function handleClick(btn) {
+  if (!_view) return
+
+  // Formatierungs-Button: markierten Text umschließen
+  if (btn.wrap) {
+    wrapSelection(_view, btn.wrap[0], btn.wrap[1])
+    return
   }
+
+  // Template mit Parametern
+  if (btn.prompt?.length) {
+    const params = await showPromptModal(btn.label, btn.prompt)
+    if (params === null) return
+    insertAtCursor(_view, btn.template(params))
+    return
+  }
+
+  // Template ohne Parameter
+  insertAtCursor(_view, btn.template({}))
 }
 
 function showPromptModal(title, fields) {
@@ -50,22 +57,17 @@ function showPromptModal(title, fields) {
 
     const modal = document.createElement('div')
     modal.className = 'modal'
-
-    const h2 = document.createElement('h2')
-    h2.textContent = title
-    modal.appendChild(h2)
+    modal.innerHTML = `<h2>${title}</h2>`
 
     const inputs = {}
-    fields.forEach(field => {
+    fields.forEach(f => {
       const label = document.createElement('label')
-      label.textContent = field.label
-
+      label.textContent = f.label
       const input = document.createElement('input')
       input.type = 'text'
-      input.value = field.default || ''
-      input.placeholder = field.label
-      inputs[field.key] = input
-
+      input.value = f.default || ''
+      input.placeholder = f.label
+      inputs[f.key] = input
       label.appendChild(input)
       modal.appendChild(label)
     })
@@ -76,22 +78,18 @@ function showPromptModal(title, fields) {
     const cancelBtn = document.createElement('button')
     cancelBtn.textContent = 'Abbrechen'
     cancelBtn.className = 'btn-secondary'
-    cancelBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay)
-      resolve(null)
-    })
+    cancelBtn.onclick = () => { document.body.removeChild(overlay); resolve(null) }
 
     const confirmBtn = document.createElement('button')
     confirmBtn.textContent = 'Einfügen'
     confirmBtn.className = 'btn-primary'
-    confirmBtn.addEventListener('click', () => {
+    confirmBtn.onclick = () => {
       const params = {}
       fields.forEach(f => { params[f.key] = inputs[f.key].value })
       document.body.removeChild(overlay)
       resolve(params)
-    })
+    }
 
-    // Enter bestätigt
     modal.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.target.tagName === 'INPUT') confirmBtn.click()
       if (e.key === 'Escape') cancelBtn.click()
@@ -103,8 +101,6 @@ function showPromptModal(title, fields) {
     overlay.appendChild(modal)
     document.body.appendChild(overlay)
 
-    // Erstes Input-Feld fokussieren
-    const firstInput = modal.querySelector('input')
-    if (firstInput) setTimeout(() => firstInput.focus(), 50)
+    setTimeout(() => modal.querySelector('input')?.focus(), 50)
   })
 }

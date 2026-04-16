@@ -1,8 +1,21 @@
-/**
- * Alle MediaWiki-Templates für das Plenum-Protokoll
- */
-
 export const TEMPLATE_GROUPS = [
+  {
+    label: 'Format',
+    buttons: [
+      { id: 'h2',     label: 'H2',      tooltip: 'Abschnittsüberschrift',  wrap: ['== ', ' =='] },
+      { id: 'h3',     label: 'H3',      tooltip: 'Unterüberschrift',       wrap: ['=== ', ' ==='] },
+      { id: 'h4',     label: 'H4',      tooltip: 'Unter-Unterüberschrift', wrap: ['==== ', ' ===='] },
+      { id: 'bold',   label: 'F',       tooltip: 'Fett (Strg+B)',          wrap: ["'''", "'''"] },
+      { id: 'italic', label: 'K',       tooltip: 'Kursiv (Strg+I)',        wrap: ["''", "''"] },
+      { id: 'link',   label: 'Link',    tooltip: 'Interner Link',
+        prompt: [
+          { key: 'ziel', label: 'Linkziel', default: '' },
+          { key: 'text', label: 'Anzeigetext (optional)', default: '' },
+        ],
+        template: ({ ziel, text }) => text ? `[[${ziel}|${text}]]` : `[[${ziel}]]`,
+      },
+    ],
+  },
   {
     label: 'Struktur',
     buttons: [
@@ -12,15 +25,7 @@ export const TEMPLATE_GROUPS = [
         template: () => {
           const date = new Date().toLocaleDateString('de-DE')
           const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-          return `== Sitzungsprotokoll ==
-; Datum: ${date}
-; Beginn: ${time} Uhr
-; Ort:
-; Sitzungsleitung:
-; Protokoll:
-; Anwesend:
-
-----\n`
+          return `== Sitzungsprotokoll ==\n; Datum: ${date}\n; Beginn: ${time} Uhr\n; Ort:\n; Sitzungsleitung:\n; Protokoll:\n; Anwesend:\n\n----\n`
         },
       },
       {
@@ -28,26 +33,26 @@ export const TEMPLATE_GROUPS = [
         label: 'TOP',
         prompt: [
           { key: 'nr', label: 'TOP-Nummer', default: '1' },
-          { key: 'titel', label: 'Titel', default: 'Titel' },
+          { key: 'titel', label: 'Titel', default: '' },
         ],
         template: ({ nr, titel }) => `\n=== TOP ${nr}: ${titel} ===\n\n`,
-      },
-      {
-        id: 'sitzungsende',
-        label: 'Sitzungsende',
-        template: () => {
-          const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-          return `\n----\n''Ende der Sitzung: ${time} Uhr''\n\n[[Kategorie:Protokoll]]\n`
-        },
       },
       {
         id: 'pause',
         label: 'Pause',
         prompt: [
-          { key: 'von', label: 'Von (Uhrzeit)', default: '' },
-          { key: 'bis', label: 'Bis (Uhrzeit)', default: '' },
+          { key: 'von', label: 'Von', default: '' },
+          { key: 'bis', label: 'Bis', default: '' },
         ],
         template: ({ von, bis }) => `\n''Sitzungsunterbrechung: ${von} – ${bis} Uhr''\n`,
+      },
+      {
+        id: 'ende',
+        label: 'Sitzungsende',
+        template: () => {
+          const time = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+          return `\n----\n''Ende der Sitzung: ${time} Uhr''\n\n[[Kategorie:Protokoll]]\n`
+        },
       },
     ],
   },
@@ -57,15 +62,8 @@ export const TEMPLATE_GROUPS = [
       {
         id: 'redebeitrag',
         label: 'Redebeitrag',
-        prompt: [
-          { key: 'name', label: 'Name', default: '' },
-        ],
+        prompt: [{ key: 'name', label: 'Name', default: '' }],
         template: ({ name }) => `:'''${name}:''' `,
-      },
-      {
-        id: 'wortmeldung',
-        label: 'Wortmeldung',
-        template: () => `: `,
       },
       {
         id: 'meinungsbild',
@@ -121,42 +119,12 @@ export const TEMPLATE_GROUPS = [
     ],
   },
   {
-    label: 'Formatierung',
+    label: 'Listen',
     buttons: [
-      {
-        id: 'fett',
-        label: 'Fett',
-        template: () => `'''fett'''`,
-        wrap: true,
-        wrapWith: ["'''", "'''"],
-      },
-      {
-        id: 'kursiv',
-        label: 'Kursiv',
-        template: () => `''kursiv''`,
-        wrap: true,
-        wrapWith: ["''", "''"],
-      },
-      {
-        id: 'liste',
-        label: 'Liste',
-        template: () => `\n* Punkt 1\n* Punkt 2\n* Punkt 3\n`,
-      },
-      {
-        id: 'tabelle',
-        label: 'Tabelle',
-        template: () =>
-          `\n{| class="wikitable"\n|-\n! Spalte 1 !! Spalte 2 !! Spalte 3\n|-\n| Zelle 1 || Zelle 2 || Zelle 3\n|}\n`,
-      },
-      {
-        id: 'link',
-        label: 'Link',
-        prompt: [
-          { key: 'ziel', label: 'Linkziel', default: 'Seite' },
-          { key: 'text', label: 'Anzeigetext', default: '' },
-        ],
-        template: ({ ziel, text }) => text ? `[[${ziel}|${text}]]` : `[[${ziel}]]`,
-      },
+      { id: 'ul',    label: '• Liste',   template: () => '\n* Punkt 1\n* Punkt 2\n* Punkt 3\n' },
+      { id: 'ol',    label: '1. Liste',  template: () => '\n# Punkt 1\n# Punkt 2\n# Punkt 3\n' },
+      { id: 'hr',    label: '—',         template: () => '\n----\n' },
+      { id: 'table', label: 'Tabelle',   template: () => '\n{| class="wikitable"\n|-\n! Spalte 1 !! Spalte 2\n|-\n| Zelle 1 || Zelle 2\n|}\n' },
     ],
   },
 ]

@@ -20,6 +20,7 @@
     <div id="header-right">
       <span id="save-status" class="save-status"></span>
       <span id="connection-status" class="status-connecting">Verbinde…</span>
+      <button id="btn-preview" title="Vorschau ein/aus">Vorschau</button>
       <button id="btn-share">Link kopieren</button>
       <button id="btn-export-clipboard">Kopieren</button>
       <button id="btn-export-download">Download .wiki</button>
@@ -29,9 +30,14 @@
 
   <div id="toolbar"></div>
 
-  <main id="editor-container">
-    <div id="editor"></div>
-  </main>
+  <div id="workspace">
+    <main id="editor-container">
+      <div id="editor"></div>
+    </main>
+    <aside id="preview-panel">
+      <div id="preview-content"></div>
+    </aside>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
 
