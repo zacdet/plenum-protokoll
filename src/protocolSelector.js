@@ -1,14 +1,12 @@
-/**
- * Protokoll-Selektor: Dropdown mit Liste + "Neues Protokoll"-Button
- */
 import { createProtocol, watchProtocolList } from './protocols.js'
 import { showToast } from './export.js'
 
-export function initProtocolSelector(containerEl, currentId, onSwitch) {
-  let protocols = []
+export function initProtocolSelector(containerEl, initialId, onSwitch) {
+  containerEl.innerHTML = ''
+
+  let currentId = initialId
   let open = false
 
-  // Wrapper
   const wrapper = document.createElement('div')
   wrapper.className = 'protocol-selector'
 
@@ -23,55 +21,72 @@ export function initProtocolSelector(containerEl, currentId, onSwitch) {
   wrapper.appendChild(dropdown)
   containerEl.appendChild(wrapper)
 
-  // Dropdown öffnen/schließen
-  trigger.addEventListener('click', () => {
+  trigger.addEventListener('click', e => {
+    e.stopPropagation()
     open = !open
     dropdown.classList.toggle('hidden', !open)
   })
 
-  document.addEventListener('click', e => {
-    if (!wrapper.contains(e.target)) {
-      open = false
-      dropdown.classList.add('hidden')
-    }
+  document.addEventListener('click', () => {
+    open = false
+    dropdown.classList.add('hidden')
   })
 
-  // Live-Liste aus Firebase
+  // currentId von außen aktualisieren (nach Protokollwechsel)
+  function setCurrentId(id) {
+    currentId = id
+    const labelEl = document.getElementById('protocol-title-label')
+    if (labelEl) {
+      // Titel aus der aktuellen Liste suchen
+      const btn = dropdown.querySelector(`.protocol-item[data-id="${id}"]`)
+      labelEl.textContent = btn
+        ? btn.querySelector('.protocol-item-title')?.textContent || id
+        : id
+    }
+    // Aktiv-Markierung aktualisieren
+    dropdown.querySelectorAll('.protocol-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.id === id)
+    })
+  }
+
   watchProtocolList(list => {
-    protocols = list
     renderDropdown(list)
     const current = list.find(p => p.id === currentId)
-    document.getElementById('protocol-title-label').textContent =
-      current ? current.title : currentId
+    const labelEl = document.getElementById('protocol-title-label')
+    if (labelEl) labelEl.textContent = current ? current.title : currentId
   })
 
   function renderDropdown(list) {
     dropdown.innerHTML = ''
 
-    // "Neues Protokoll"-Button
     const newBtn = document.createElement('button')
     newBtn.className = 'protocol-new-btn'
     newBtn.textContent = '+ Neues Protokoll'
-    newBtn.addEventListener('click', () => handleNew())
+    newBtn.addEventListener('click', e => { e.stopPropagation(); handleNew() })
     dropdown.appendChild(newBtn)
 
     if (list.length > 0) {
-      const divider = document.createElement('div')
-      divider.className = 'protocol-divider'
-      dropdown.appendChild(divider)
+      const div = document.createElement('div')
+      div.className = 'protocol-divider'
+      dropdown.appendChild(div)
     }
 
     list.forEach(protocol => {
       const item = document.createElement('button')
       item.className = 'protocol-item' + (protocol.id === currentId ? ' active' : '')
+      item.dataset.id = protocol.id
       item.innerHTML = `
-        <span class="protocol-item-title">${escapeHtml(protocol.title)}</span>
-        <span class="protocol-item-date">${formatDate(protocol.createdAt)}</span>
+        <span class="protocol-item-title">${esc(protocol.title)}</span>
+        <span class="protocol-item-date">${fmtDate(protocol.createdAt)}</span>
       `
-      item.addEventListener('click', () => {
+      item.addEventListener('click', e => {
+        e.stopPropagation()
         dropdown.classList.add('hidden')
         open = false
-        onSwitch(protocol.id)
+        if (protocol.id !== currentId) {
+          setCurrentId(protocol.id)
+          onSwitch(protocol.id)
+        }
       })
       dropdown.appendChild(item)
     })
@@ -81,14 +96,17 @@ export function initProtocolSelector(containerEl, currentId, onSwitch) {
     dropdown.classList.add('hidden')
     open = false
 
-    const defaultTitle = 'Plenum ' + new Date().toLocaleDateString('de-DE')
-    const title = await promptTitle(defaultTitle)
+    const title = await promptTitle('Plenum ' + new Date().toLocaleDateString('de-DE'))
     if (!title) return
 
     const id = await createProtocol(title)
     showToast(`"${title}" erstellt`)
+    setCurrentId(id)
     onSwitch(id)
   }
+
+  // Gibt Funktion zurück um currentId von außen zu setzen
+  return setCurrentId
 }
 
 function promptTitle(defaultValue) {
@@ -98,40 +116,36 @@ function promptTitle(defaultValue) {
     overlay.innerHTML = `
       <div class="modal">
         <h2>Neues Protokoll</h2>
-        <label>
-          Titel
-          <input id="new-protocol-title" type="text" value="${escapeHtml(defaultValue)}" maxlength="80" />
-        </label>
+        <label>Titel<input id="new-proto-title" type="text" value="${esc(defaultValue)}" maxlength="80" /></label>
         <div class="modal-actions">
-          <button class="btn-secondary" id="new-cancel">Abbrechen</button>
-          <button class="btn-primary" id="new-confirm">Erstellen</button>
+          <button class="btn-secondary" id="np-cancel">Abbrechen</button>
+          <button class="btn-primary" id="np-confirm">Erstellen</button>
         </div>
       </div>
     `
     document.body.appendChild(overlay)
-    const input = overlay.querySelector('#new-protocol-title')
+    const input = overlay.querySelector('#new-proto-title')
     setTimeout(() => { input.focus(); input.select() }, 50)
 
-    overlay.querySelector('#new-confirm').addEventListener('click', () => {
-      const val = input.value.trim()
+    overlay.querySelector('#np-confirm').onclick = () => {
       document.body.removeChild(overlay)
-      resolve(val || null)
-    })
-    overlay.querySelector('#new-cancel').addEventListener('click', () => {
+      resolve(input.value.trim() || null)
+    }
+    overlay.querySelector('#np-cancel').onclick = () => {
       document.body.removeChild(overlay)
       resolve(null)
-    })
+    }
     overlay.addEventListener('keydown', e => {
-      if (e.key === 'Enter') overlay.querySelector('#new-confirm').click()
-      if (e.key === 'Escape') overlay.querySelector('#new-cancel').click()
+      if (e.key === 'Enter')  overlay.querySelector('#np-confirm').click()
+      if (e.key === 'Escape') overlay.querySelector('#np-cancel').click()
     })
   })
 }
 
-function formatDate(ts) {
+function fmtDate(ts) {
   return new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-function escapeHtml(s) {
+function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
