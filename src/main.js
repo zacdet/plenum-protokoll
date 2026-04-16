@@ -137,8 +137,14 @@ async function mountEditor(roomId, identity) {
 
   initToolbar(document.getElementById('toolbar'), editor)
 
-  document.getElementById('connection-status').textContent = 'Verbunden'
-  document.getElementById('connection-status').className = 'status-connected'
+  const statusEl = document.getElementById('connection-status')
+  if (provider.connected) {
+    statusEl.textContent = 'Verbunden'
+    statusEl.className = 'status-connected'
+  } else {
+    statusEl.textContent = 'Offline'
+    statusEl.className = 'status-connecting'
+  }
 
   const saveEl = document.getElementById('save-status')
   editor.on('update', ({ transaction }) => {

@@ -48,6 +48,7 @@ export class FirebaseProvider {
     this._pendingUpdates = []
     this._flushTimer = null
     this._destroyed = false
+    this.connected = false
 
     this._childHandler = null
     this._awarenessHandler = null
@@ -62,7 +63,10 @@ export class FirebaseProvider {
 
     let lastKey = null
     try {
-      const snap = await get(this._updatesRef)
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Firebase get() timeout nach 5s')), 5000)
+      )
+      const snap = await Promise.race([get(this._updatesRef), timeout])
       if (snap.exists()) {
         const updates = []
         snap.forEach(child => {
@@ -78,6 +82,7 @@ export class FirebaseProvider {
       } else {
         console.log(`${LOG} Neues Dokument`)
       }
+      this.connected = true
     } catch (e) {
       console.error(`${LOG} Historie-Ladefehler:`, e)
     }
