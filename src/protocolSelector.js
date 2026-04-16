@@ -115,7 +115,7 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
     item.dataset.id = protocol.id
     item.innerHTML = `
       <span class="protocol-item-title">⬇ ${esc(protocol.title)}</span>
-      <span class="protocol-item-date">${fmtDate(protocol.createdAt)}</span>
+      <span class="protocol-item-date">${fmtDateTime(protocol.createdAt)}</span>
     `
     item.addEventListener('click', e => {
       e.stopPropagation()
@@ -178,6 +178,10 @@ function promptTitle(defaultValue) {
 
 function fmtDate(ts) {
   return new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function fmtDateTime(ts) {
+  return new Date(ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function esc(s) {
