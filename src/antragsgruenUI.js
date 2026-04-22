@@ -1,5 +1,5 @@
 
-import { fetchAmendments, fetchAmendmentDetails } from './antragsgruen.js'
+import { fetchAmendments, fetchFullMotionData } from './antragsgruen.js'
 
 let _editor = null
 let _consultationUrl = localStorage.getItem('antragsgruen-url') || 'https://antragstool.bufak-wiwi.org/index.php?consultationPath=bufak-bremen'
@@ -8,7 +8,7 @@ export function initAntragsgruenUI(editor) {
   _editor = editor
 }
 
-export async function showAmendmentsModal() {
+export async function showAmendmentsModal(forceRefresh = false) {
   if (!_consultationUrl) {
     const url = prompt('Bitte Antragsgrün Consultation URL eingeben:', 'https://antragstool.bufak-wiwi.org/index.php?consultationPath=bufak-bremen')
     if (!url) return
@@ -22,9 +22,9 @@ export async function showAmendmentsModal() {
   const modal = document.createElement('div')
   modal.className = 'modal modal-large'
   modal.innerHTML = `
-    <h2>Antragsgrün Änderungsanträge</h2>
+    <h2>Antragsgrün Anträge & Änderungen</h2>
     <div class="modal-search">
-      <input type="text" id="ag-search" placeholder="Suchen..." autofocus>
+      <input type="text" id="ag-search" placeholder="Suchen nach Anträgen..." autofocus>
       <button id="ag-refresh" class="btn-secondary">Aktualisieren</button>
       <button id="ag-config" class="btn-secondary" title="URL konfigurieren">⚙️</button>
     </div>
@@ -41,12 +41,11 @@ export async function showAmendmentsModal() {
 
   const listEl = modal.querySelector('#ag-list')
   const searchInput = modal.querySelector('#ag-search')
-  let allAmendments = []
+  let allMotions = []
 
   const renderList = (filter = '') => {
-    const filtered = allAmendments.filter(a => 
-      a.fullTitle.toLowerCase().includes(filter.toLowerCase()) ||
-      a.motionTitle.toLowerCase().includes(filter.toLowerCase())
+    const filtered = allMotions.filter(m => 
+      m.fullTitle.toLowerCase().includes(filter.toLowerCase())
     )
     
     if (filtered.length === 0) {
@@ -54,26 +53,31 @@ export async function showAmendmentsModal() {
       return
     }
 
-    listEl.innerHTML = filtered.map(a => `
-      <div class="ag-item" data-url="${a.url}">
-        <div class="ag-item-id">${a.id}</div>
+    listEl.innerHTML = filtered.map(m => `
+      <div class="ag-item">
+        <div class="ag-item-id">${m.id}</div>
         <div class="ag-item-content">
-          <div class="ag-item-title">${a.motionTitle}</div>
-          <div class="ag-item-subtitle">${a.id}</div>
+          <div class="ag-item-title">${m.title}</div>
+          <div class="ag-item-subtitle">${m.fullTitle}</div>
         </div>
-        <button class="ag-item-insert btn-primary">Einfügen</button>
+        <button class="ag-item-insert btn-primary">Gesamtpaket einfügen</button>
       </div>
     `).join('')
 
     listEl.querySelectorAll('.ag-item-insert').forEach((btn, idx) => {
-      btn.onclick = () => insertAmendment(filtered[idx].url)
+      btn.onclick = async () => {
+        btn.disabled = true
+        btn.textContent = 'Lädt...'
+        await insertFullMotion(filtered[idx].url)
+        document.body.removeChild(overlay)
+      }
     })
   }
 
   const loadData = async () => {
-    listEl.innerHTML = '<div class="loading">Lade Anträge...</div>'
+    listEl.innerHTML = '<div class="loading">Lade Hauptanträge...</div>'
     try {
-      allAmendments = await fetchAmendments(_consultationUrl)
+      allMotions = await fetchAmendments(_consultationUrl)
       renderList(searchInput.value)
     } catch (err) {
       listEl.innerHTML = `<div class="error">Fehler beim Laden: ${err.message}</div>`
@@ -96,40 +100,40 @@ export async function showAmendmentsModal() {
   loadData()
 }
 
-async function insertAmendment(url) {
+async function insertFullMotion(url) {
   if (!_editor) return
   
-  // Show loading state or toast
-  const details = await fetchAmendmentDetails(url)
+  const data = await fetchFullMotionData(url)
   
-  // Template format from templates/index.js
-  const content = [
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: '{{Änderungsantrag' }]
-    },
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: `|1=${details.title}` }]
-    },
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: `|2=${details.instructions}` }]
-    },
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: `|3=${details.reasoning}` }]
-    },
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: '|4=Abstimmung: Der Änderungsantrag wurde mit Ja: X Nein: Y Enthaltung: Z angenommen' }]
-    },
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: '}}' }]
-    },
-    { type: 'paragraph' }
-  ]
+  const lines = []
+  lines.push(`=== ${data.id}: ${data.title} ===`)
+  lines.push('{{Antrag')
+  lines.push(`|1=${data.applicant || 'Antragsteller'}`)
+  lines.push(`|2=${data.text}`)
+  lines.push('')
+
+  // Amendments inside the motion
+  data.amendments.forEach(am => {
+    lines.push(`'''${am.id}'''`)
+    lines.push('{{Änderungsantrag')
+    lines.push(`|1=${am.applicant || 'Antragsteller'}`)
+    lines.push(`|2=${am.instructions}`)
+    lines.push(`|3=${am.reasoning}`)
+    lines.push('|4=Abstimmung: ')
+    lines.push('}}')
+    lines.push('')
+  })
+
+  lines.push(`|3=${data.reasoning}`)
+  lines.push('|4=DISKUSSION ZUM ANTRAG:')
+  lines.push('* ')
+  lines.push('|5=Abstimmung: ')
+  lines.push('}}')
+
+  const content = lines.map(line => ({
+    type: 'paragraph',
+    content: line ? [{ type: 'text', text: line }] : []
+  }))
 
   _editor.chain().focus().insertContent(content).run()
 }
