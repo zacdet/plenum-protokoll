@@ -1,10 +1,24 @@
 import { TEMPLATE_GROUPS } from './templates/index.js'
+import { initAntragsgruenUI, showAmendmentsModal } from './antragsgruenUI.js'
 
 let _editor = null
 
 export function initToolbar(containerEl, editor) {
   _editor = editor
+  initAntragsgruenUI(editor)
   containerEl.innerHTML = ''
+
+  // Antragsgrün Group
+  const agGroupEl = document.createElement('div')
+  agGroupEl.className = 'toolbar-group'
+  agGroupEl.innerHTML = `
+    <span class="toolbar-group-label">Antragsgrün</span>
+    <button class="toolbar-btn ag-list-btn" title="Änderungsanträge von Antragsgrün laden">Alle ÄAs</button>
+    <button class="toolbar-btn ag-refresh-btn" title="Liste aktualisieren">🔄</button>
+  `
+  agGroupEl.querySelector('.ag-list-btn').onclick = () => showAmendmentsModal()
+  agGroupEl.querySelector('.ag-refresh-btn').onclick = () => showAmendmentsModal(true)
+  containerEl.appendChild(agGroupEl)
 
   TEMPLATE_GROUPS.forEach(group => {
     const groupEl = document.createElement('div')
