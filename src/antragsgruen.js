@@ -1,4 +1,24 @@
 
+const PROXY = url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+const TIMEOUT_MS = 12000
+
+async function proxyFetch(url) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    const resp = await fetch(PROXY(url), { signal: controller.signal })
+    clearTimeout(timer)
+    return resp
+  } catch (e) {
+    clearTimeout(timer)
+    throw e
+  }
+}
+
+function parseHtml(html) {
+  return new DOMParser().parseFromString(html, 'text/html')
+}
+
 function extractApplicant(doc) {
   for (const row of doc.querySelectorAll('table.motionDataTable tr')) {
     const th = row.querySelector('th')
@@ -10,11 +30,7 @@ function extractApplicant(doc) {
 }
 
 export async function fetchFullMotionData(motionUrl) {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(motionUrl)}`
-  const response = await fetch(proxyUrl)
-  const html = await response.text()
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
+  const doc = parseHtml(await (await proxyFetch(motionUrl)).text())
 
   const h1Text = doc.querySelector('h1')?.textContent.trim() || ''
   const colonIdx = h1Text.indexOf(':')
@@ -28,127 +44,96 @@ export async function fetchFullMotionData(motionUrl) {
 
   doc.querySelectorAll('section.motionTextHolder').forEach(section => {
     const heading = section.querySelector('h2, h3')?.textContent.trim() || ''
-    const isReasoning = /begründung/i.test(heading)
-
     const paragraphs = []
     section.querySelectorAll('.textOrig').forEach(el => {
       const clone = el.cloneNode(true)
       clone.querySelectorAll('.lineNumber, .line-number, .privateParagraphNoteHolder').forEach(e => e.remove())
-      const pText = clone.textContent.trim()
-      if (pText) paragraphs.push(pText)
+      const t = clone.textContent.trim()
+      if (t) paragraphs.push(t)
     })
-
-    if (isReasoning) {
-      reasoning = paragraphs.join('\n\n')
-    } else if (/antragstext/i.test(heading)) {
-      text = paragraphs.join('\n\n')
-    }
+    if (/begründung/i.test(heading)) reasoning = paragraphs.join('\n\n')
+    else if (/antragstext/i.test(heading)) text = paragraphs.join('\n\n')
   })
 
-  const amendments = []
-  const amLinks = doc.querySelectorAll('ul.amendments li a')
+  const amLinks = Array.from(doc.querySelectorAll('ul.amendments li a'))
+    .filter(a => a.getAttribute('href'))
 
-  for (const link of amLinks) {
-    const href = link.getAttribute('href')
-    if (!href) continue
-    const amUrl = new URL(href, motionUrl).href
-    try {
-      const amDetails = await fetchAmendmentDetails(amUrl)
-      const amId = link.textContent.trim() || amDetails.title.split(' ')[0].trim()
-      amendments.push({ id: amId, ...amDetails })
-    } catch (e) {
-      console.error('Failed to fetch amendment', amUrl, e)
-    }
-  }
+  const amResults = await Promise.allSettled(
+    amLinks.map(async link => {
+      const amUrl = new URL(link.getAttribute('href'), motionUrl).href
+      const details = await fetchAmendmentDetails(amUrl)
+      return { id: link.textContent.trim() || details.id, ...details }
+    })
+  )
+
+  const amendments = amResults
+    .filter(r => r.status === 'fulfilled')
+    .map(r => r.value)
+
+  amResults
+    .filter(r => r.status === 'rejected')
+    .forEach(r => console.error('Amendment fetch failed:', r.reason))
 
   return { id, title, applicant, text, reasoning, amendments }
 }
 
 export async function fetchAllMotions(consultationUrl) {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(consultationUrl)}`
-  const response = await fetch(proxyUrl)
-  const html = await response.text()
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
+  const doc = parseHtml(await (await proxyFetch(consultationUrl)).text())
 
-  const results = []
-  doc.querySelectorAll('li.motion').forEach(motionEl => {
+  return Array.from(doc.querySelectorAll('li.motion')).flatMap(motionEl => {
     const prefix = motionEl.querySelector('.motionPrefix')?.textContent.trim() || ''
     const title = motionEl.querySelector('.motionTitle')?.textContent.trim() || ''
     const link = motionEl.querySelector('a[class*="motionLink"]')
-
-    if (link) {
-      results.push({
-        id: prefix,
-        title,
-        url: new URL(link.getAttribute('href'), consultationUrl).href,
-        fullTitle: `${prefix}: ${title}`
-      })
-    }
+    if (!link) return []
+    return [{
+      id: prefix,
+      title,
+      url: new URL(link.getAttribute('href'), consultationUrl).href,
+      fullTitle: `${prefix}: ${title}`
+    }]
   })
-  return results
 }
 
 export async function fetchAllAmendments(consultationUrl) {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(consultationUrl)}`
-  const response = await fetch(proxyUrl)
-  const html = await response.text()
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
+  const doc = parseHtml(await (await proxyFetch(consultationUrl)).text())
 
-  const results = []
-  doc.querySelectorAll('li.amendment').forEach(amEl => {
+  return Array.from(doc.querySelectorAll('li.amendment')).flatMap(amEl => {
     const link = amEl.querySelector('a')
+    if (!link) return []
     const motionEl = amEl.closest('li.motion')
     const motionPrefix = motionEl?.querySelector('.motionPrefix')?.textContent.trim() || ''
     const motionTitle = motionEl?.querySelector('.motionTitle')?.textContent.trim() || ''
-
-    if (link) {
-      const amId = link.textContent.trim()
-      results.push({
-        id: amId,
-        motionPrefix,
-        motionTitle: `${motionPrefix} ${motionTitle}`.trim(),
-        url: new URL(link.getAttribute('href'), consultationUrl).href,
-        fullTitle: `${amId} zu ${motionPrefix} ${motionTitle}`.trim()
-      })
-    }
+    const amId = link.textContent.trim()
+    return [{
+      id: amId,
+      motionPrefix,
+      motionTitle: `${motionPrefix} ${motionTitle}`.trim(),
+      url: new URL(link.getAttribute('href'), consultationUrl).href,
+      fullTitle: `${amId} zu ${motionPrefix} ${motionTitle}`.trim()
+    }]
   })
-  return results
 }
 
 export async function fetchAmendmentDetails(amendmentUrl) {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(amendmentUrl)}`
-  const response = await fetch(proxyUrl)
-  const html = await response.text()
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
+  const doc = parseHtml(await (await proxyFetch(amendmentUrl)).text())
 
   const h1Text = doc.querySelector('h1')?.textContent.trim() || ''
-  const title = h1Text
   const id = h1Text.split(' zu ')[0].trim()
-
   const applicant = extractApplicant(doc)
+  const reasoning = doc.querySelector('#amendmentExplanation .text, section#amendmentExplanation .paragraph .text')?.textContent.trim() || ''
 
-  const reasoningEl = doc.querySelector('#amendmentExplanation .text, section#amendmentExplanation .paragraph .text')
-  const reasoning = reasoningEl?.textContent.trim() || ''
-
-  const diffEls = doc.querySelectorAll('.onlyChangedText .text.motionTextFormattings')
   let instructions = ''
-
-  if (diffEls.length > 0) {
-    diffEls.forEach(el => {
-      const clone = el.cloneNode(true)
-      clone.querySelectorAll('del').forEach(del => {
-        del.parentNode.replaceChild(doc.createTextNode(`<del>${del.textContent}</del>`), del)
-      })
-      clone.querySelectorAll('ins').forEach(ins => {
-        ins.parentNode.replaceChild(doc.createTextNode(`'''${ins.textContent}'''`), ins)
-      })
-      clone.querySelectorAll('.lineNumber, .line-number').forEach(e => e.remove())
-      instructions += clone.textContent.trim() + '\n\n'
+  doc.querySelectorAll('.onlyChangedText .text.motionTextFormattings').forEach(el => {
+    const clone = el.cloneNode(true)
+    clone.querySelectorAll('.lineNumber, .line-number').forEach(e => e.remove())
+    clone.querySelectorAll('del').forEach(del => {
+      del.parentNode.replaceChild(doc.createTextNode(`<del>${del.textContent}</del>`), del)
     })
-  }
+    clone.querySelectorAll('ins').forEach(ins => {
+      ins.parentNode.replaceChild(doc.createTextNode(`'''${ins.textContent}'''`), ins)
+    })
+    instructions += clone.textContent.trim() + '\n\n'
+  })
 
-  return { id, title, applicant, reasoning, instructions: instructions.trim() }
+  return { id, title: h1Text, applicant, reasoning, instructions: instructions.trim() }
 }
