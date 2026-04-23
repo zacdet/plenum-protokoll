@@ -1,16 +1,23 @@
-
 import { fetchConsultationData, fetchFullMotionData, fetchAmendmentDetails, prefetch } from './antragsgruen.js'
+import { showToast } from './export.js'
 
 let _editor = null
-let _consultationUrl = localStorage.getItem('antragsgruen-url') || 'https://antragstool.bufak-wiwi.org/index.php?consultationPath=bufak-bremen'
+const DEFAULT_URL = 'https://antragstool.bufak-wiwi.org/index.php?consultationPath=bufak-bremen'
+let _consultationUrl = localStorage.getItem('antragsgruen-url') || DEFAULT_URL
 
 export function initAntragsgruenUI(editor) {
   _editor = editor
 }
 
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ))
+}
+
 export async function showAmendmentsModal() {
   if (!_consultationUrl) {
-    const url = prompt('Bitte Antragsgrün Consultation URL eingeben:', 'https://antragstool.bufak-wiwi.org/index.php?consultationPath=bufak-bremen')
+    const url = prompt('Bitte Antragsgrün Consultation URL eingeben:', DEFAULT_URL)
     if (!url) return
     _consultationUrl = url
     localStorage.setItem('antragsgruen-url', url)
@@ -43,6 +50,8 @@ export async function showAmendmentsModal() {
   overlay.appendChild(modal)
   document.body.appendChild(overlay)
 
+  const closeModal = () => { if (overlay.parentNode) document.body.removeChild(overlay) }
+
   const listEl = modal.querySelector('#ag-list')
   const searchInput = modal.querySelector('#ag-search')
   let allMotions = []
@@ -51,11 +60,10 @@ export async function showAmendmentsModal() {
 
   const renderList = (filter = '') => {
     const items = currentTab === 'amendments' ? allAmendments : allMotions
-    const filtered = items.filter(m => 
-      m.fullTitle.toLowerCase().includes(filter.toLowerCase())
-    )
-    
-    if (filtered.length === 0) {
+    const q = filter.toLowerCase()
+    const filtered = items.filter(m => m.fullTitle.toLowerCase().includes(q))
+
+    if (!filtered.length) {
       listEl.innerHTML = '<div class="empty">Keine Einträge gefunden</div>'
       return
     }
@@ -63,34 +71,38 @@ export async function showAmendmentsModal() {
     const isAmendments = currentTab === 'amendments'
     listEl.innerHTML = filtered.map(m => `
       <div class="ag-item">
-        <div class="ag-item-id${isAmendments ? ' amendment' : ''}">${isAmendments ? `${m.id} zu ${m.motionPrefix}` : m.id}</div>
+        <div class="ag-item-id${isAmendments ? ' amendment' : ''}">${escapeHtml(isAmendments ? `${m.id} zu ${m.motionPrefix}` : m.id)}</div>
         <div class="ag-item-content">
-          <div class="ag-item-title">${isAmendments ? m.fullTitle : m.title}</div>
-          <div class="ag-item-subtitle">${isAmendments ? m.motionTitle : m.id}</div>
+          <div class="ag-item-title">${escapeHtml(isAmendments ? m.fullTitle : m.title)}</div>
+          <div class="ag-item-subtitle">${escapeHtml(isAmendments ? m.motionTitle : m.id)}</div>
         </div>
         <button class="ag-item-insert btn-primary">Einfügen</button>
       </div>
     `).join('')
 
-    listEl.querySelectorAll('.ag-item').forEach((item, idx) => {
+    listEl.querySelectorAll('.ag-item').forEach((itemEl, idx) => {
       const m = filtered[idx]
-      item.addEventListener('mouseenter', () => prefetch(m.url), { once: true })
+      itemEl.addEventListener('mouseenter', () => prefetch(m.url), { once: true })
 
-      item.querySelector('.ag-item-insert').onclick = (btn => async () => {
+      const btn = itemEl.querySelector('.ag-item-insert')
+      btn.onclick = async () => {
         btn.disabled = true
-        btn.textContent = 'Lädt...'
-        if (currentTab === 'amendments') {
-          await insertSingleAmendment(m.url)
-        } else {
-          await insertFullMotion(m.url)
+        btn.textContent = 'Lädt…'
+        try {
+          if (currentTab === 'amendments') await insertSingleAmendment(m.url)
+          else await insertFullMotion(m.url)
+          closeModal()
+        } catch (e) {
+          btn.disabled = false
+          btn.textContent = 'Einfügen'
+          showToast('Einfügen fehlgeschlagen: ' + e.message, 'error')
         }
-        document.body.removeChild(overlay)
-      })(item.querySelector('.ag-item-insert'))
+      }
     })
   }
 
   const loadData = async () => {
-    listEl.innerHTML = '<div class="loading">Lade Anträge und Änderungen...</div>'
+    listEl.innerHTML = '<div class="loading">Lade Anträge und Änderungen…</div>'
     try {
       const data = await fetchConsultationData(_consultationUrl)
       allMotions = data.motions
@@ -100,7 +112,7 @@ export async function showAmendmentsModal() {
       const msg = (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted'))
         ? 'Zeitüberschreitung – bitte erneut versuchen (Aktualisieren im Modal)'
         : err.message
-      listEl.innerHTML = `<div class="error">Fehler beim Laden: ${msg}</div>`
+      listEl.innerHTML = `<div class="error">Fehler beim Laden: ${escapeHtml(msg)}</div>`
     }
   }
 
@@ -114,7 +126,7 @@ export async function showAmendmentsModal() {
   })
 
   modal.querySelector('#ag-refresh').onclick = loadData
-  modal.querySelector('#ag-close').onclick = () => document.body.removeChild(overlay)
+  modal.querySelector('#ag-close').onclick = closeModal
   modal.querySelector('#ag-config').onclick = () => {
     const newUrl = prompt('Antragsgrün Consultation URL:', _consultationUrl)
     if (newUrl) {
@@ -124,16 +136,26 @@ export async function showAmendmentsModal() {
     }
   }
 
-  searchInput.oninput = (e) => renderList(e.target.value)
+  searchInput.oninput = e => renderList(e.target.value)
 
   loadData()
+}
+
+// ─── Insert helpers ──────────────────────────────────────────────────────────
+// Content is inserted as plain paragraphs; the editor's appendTransaction plugins
+// auto-convert `=== title ===` → heading and `* item` → bullet list.
+
+function linesToParagraphs(lines) {
+  return lines.map(line => ({
+    type: 'paragraph',
+    content: line ? [{ type: 'text', text: line }] : [],
+  }))
 }
 
 async function insertSingleAmendment(url) {
   if (!_editor) return
   const am = await fetchAmendmentDetails(url)
-
-  insertLines([
+  _editor.chain().focus().insertContent(linesToParagraphs([
     `'''${am.id}'''`,
     '{{Änderungsantrag',
     `|1=${am.applicant || 'N.N.'}`,
@@ -141,18 +163,15 @@ async function insertSingleAmendment(url) {
     `|3=${am.reasoning || 'keiner'}`,
     '|4=Abstimmung: ',
     '}}',
-  ])
+  ])).run()
 }
 
 async function insertFullMotion(url) {
   if (!_editor) return
   const data = await fetchFullMotionData(url)
 
-  const nodes = [
-    { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${data.id}: ${data.title}` }] },
-  ]
-
-  const motionLines = [
+  const lines = [
+    `=== ${data.id}: ${data.title} ===`,
     '{{Antrag',
     `|1=${data.applicant || 'N.N.'}`,
     `|2=${data.text}`,
@@ -160,50 +179,26 @@ async function insertFullMotion(url) {
   ]
 
   for (const am of data.amendments) {
-    motionLines.push(`'''${am.id}'''`)
-    motionLines.push('{{Änderungsantrag')
-    motionLines.push(`|1=${am.applicant || 'N.N.'}`)
-    motionLines.push(`|2=${am.instructions}`)
-    motionLines.push(`|3=${am.reasoning || 'keiner'}`)
-    motionLines.push('|4=Abstimmung: ')
-    motionLines.push('}}')
-    motionLines.push('')
+    lines.push(
+      `'''${am.id}'''`,
+      '{{Änderungsantrag',
+      `|1=${am.applicant || 'N.N.'}`,
+      `|2=${am.instructions}`,
+      `|3=${am.reasoning || 'keiner'}`,
+      '|4=Abstimmung: ',
+      '}}',
+      '',
+    )
   }
 
-  motionLines.push(`|3=${data.reasoning}`)
-  motionLines.push('|4=DISKUSSION ZUM ANTRAG:')
-  motionLines.push('* ')
-  motionLines.push('|5=Abstimmung: ')
-  motionLines.push('}}')
+  lines.push(
+    `|3=${data.reasoning}`,
+    '|4=DISKUSSION ZUM ANTRAG:',
+    '* ',
+    '|5=Abstimmung: ',
+    '}}',
+    '',
+  )
 
-  for (const line of motionLines) {
-    nodes.push(lineToNode(line))
-  }
-
-  nodes.push({ type: 'paragraph' })
-  _editor.chain().focus().insertContent(nodes).run()
-}
-
-function lineToNode(line) {
-  const headingMatch = line.match(/^(={2,6})\s+(.*?)\s+={2,6}$/)
-  if (headingMatch) {
-    return {
-      type: 'heading',
-      attrs: { level: Math.min(headingMatch[1].length, 6) },
-      content: headingMatch[2] ? [{ type: 'text', text: headingMatch[2] }] : [],
-    }
-  }
-  const bulletMatch = line.match(/^(\*+)\s?(.*)$/)
-  if (bulletMatch) {
-    const depth = bulletMatch[1].length
-    const text  = bulletMatch[2]
-    let item = { type: 'listItem', content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }] }
-    for (let i = 1; i < depth; i++) item = { type: 'listItem', content: [{ type: 'paragraph', content: [] }, { type: 'bulletList', content: [item] }] }
-    return { type: 'bulletList', content: [item] }
-  }
-  return { type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] }
-}
-
-function insertLines(lines) {
-  _editor.chain().focus().insertContent(lines.map(lineToNode)).run()
+  _editor.chain().focus().insertContent(linesToParagraphs(lines)).run()
 }

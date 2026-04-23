@@ -81,11 +81,14 @@ const WikiFoldingPlugin = new Plugin({
     init() { return DecorationSet.empty },
     apply(tr, oldState) {
       if (tr.docChanged) {
-        for (const [src, dst] of [[collapsedStarts, new Set()], [collapsedHeadings, new Set()]]) {
-          const remapped = dst
-          for (const pos of src) remapped.add(tr.mapping.map(pos))
-          src.clear()
-          for (const pos of remapped) src.add(pos)
+        // Remap stored positions; drop any whose underlying node was deleted.
+        for (const set of [collapsedStarts, collapsedHeadings]) {
+          const previous = [...set]
+          set.clear()
+          for (const pos of previous) {
+            const r = tr.mapping.mapResult(pos)
+            if (!r.deleted) set.add(r.pos)
+          }
         }
       }
 
@@ -182,35 +185,21 @@ const WikiFoldingPlugin = new Plugin({
     decorations(state) { return this.getState(state) },
     handleDOMEvents: {
       click(view, event) {
-        let el = event.target
-        while (el && el !== view.dom) {
-          const attr = el.getAttribute
-
-          if (attr && el.getAttribute('data-heading-fold')) {
-            try {
-              const domPos  = view.posAtDOM(el, 0)
-              const $pos    = view.state.doc.resolve(domPos)
-              const nodePos = $pos.depth > 0 ? $pos.before() : domPos
-              collapsedHeadings.has(nodePos) ? collapsedHeadings.delete(nodePos) : collapsedHeadings.add(nodePos)
-              view.dispatch(view.state.tr.setMeta('wikiFoldingUpdate', true))
-              event.preventDefault()
-            } catch (e) { console.warn('Heading fold error', e) }
-            return true
-          }
-
-          if (attr && el.getAttribute('data-folding-trigger')) {
-            try {
-              const domPos  = view.posAtDOM(el, 0)
-              const $pos    = view.state.doc.resolve(domPos)
-              const nodePos = $pos.depth > 0 ? $pos.before() : domPos
-              collapsedStarts.has(nodePos) ? collapsedStarts.delete(nodePos) : collapsedStarts.add(nodePos)
-              view.dispatch(view.state.tr.setMeta('wikiFoldingUpdate', true))
-              event.preventDefault()
-            } catch (e) { console.warn('WikiFolding click error', e) }
-            return true
-          }
-
-          el = el.parentElement
+        for (let el = event.target; el && el !== view.dom; el = el.parentElement) {
+          if (el.nodeType !== 1) continue
+          const set = el.getAttribute('data-heading-fold') ? collapsedHeadings
+                    : el.getAttribute('data-folding-trigger') ? collapsedStarts
+                    : null
+          if (!set) continue
+          try {
+            const domPos  = view.posAtDOM(el, 0)
+            const $pos    = view.state.doc.resolve(domPos)
+            const nodePos = $pos.depth > 0 ? $pos.before() : domPos
+            set.has(nodePos) ? set.delete(nodePos) : set.add(nodePos)
+            view.dispatch(view.state.tr.setMeta('wikiFoldingUpdate', true))
+            event.preventDefault()
+          } catch (e) { console.warn('Fold toggle error', e) }
+          return true
         }
         return false
       },
@@ -224,18 +213,21 @@ const WikiFoldingExtension = Extension.create({
 })
 
 // ─── Inline syntax colouring (<del> → red, '''ins''' → green) ────────────────
+const DEL_SYNTAX_RE  = /<del>[\s\S]*?<\/del>/g
+const BOLD_SYNTAX_RE = /'''[\s\S]*?'''/g
+
 function buildSyntaxDecorations(doc) {
   const decorations = []
   doc.descendants((node, pos) => {
     if (!node.isText) return
     const text = node.text
-    let m
-    const delRe  = /<del>[\s\S]*?<\/del>/g
-    const boldRe = /'''[\s\S]*?'''/g
-    while ((m = delRe.exec(text))  !== null)
-      decorations.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: 'wiki-del' }))
-    while ((m = boldRe.exec(text)) !== null)
-      decorations.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: 'wiki-ins' }))
+    for (const [re, cls] of [[DEL_SYNTAX_RE, 'wiki-del'], [BOLD_SYNTAX_RE, 'wiki-ins']]) {
+      re.lastIndex = 0
+      let m
+      while ((m = re.exec(text)) !== null) {
+        decorations.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: cls }))
+      }
+    }
   })
   return DecorationSet.create(doc, decorations)
 }
@@ -257,7 +249,9 @@ const WikiSyntaxExtension = Extension.create({
 })
 
 // ─── Wiki list conversion (* / ** / *** → bulletList) ────────────────────────
-const BULLET_LINE_RE = /^(\*+)\s*(.*)/
+// Require whitespace after the asterisks (or end-of-line) so inline
+// `*emphasis*` syntax isn't converted to a bullet list.
+const BULLET_LINE_RE = /^(\*+)(?:\s+(.*)|\s*$)/
 
 function buildNestedList(items, schema) {
   const minDepth = Math.min(...items.map(it => it.depth))
@@ -299,7 +293,7 @@ const WikiListExtension = Extension.create({
           if (node.type.name === 'paragraph') {
             const m = node.textContent.match(BULLET_LINE_RE)
             if (m) {
-              current.push({ pos, end: pos + node.nodeSize, depth: m[1].length, text: m[2] })
+              current.push({ pos, end: pos + node.nodeSize, depth: m[1].length, text: m[2] ?? '' })
               return
             }
           }

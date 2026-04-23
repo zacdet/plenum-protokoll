@@ -39,6 +39,21 @@ export function prefetch(url) {
   proxyFetch(url).catch(() => {})
 }
 
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++
+      if (i >= items.length) return
+      try { results[i] = { status: 'fulfilled', value: await fn(items[i], i) } }
+      catch (reason) { results[i] = { status: 'rejected', reason } }
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 function parseHtml(html) {
   return new DOMParser().parseFromString(html, 'text/html')
 }
@@ -112,18 +127,17 @@ export async function fetchFullMotionData(motionUrl) {
   const amLinks = Array.from(doc.querySelectorAll('ul.amendments li a'))
     .filter(a => a.getAttribute('href'))
 
-  const amResults = await Promise.allSettled(
-    amLinks.map(async link => {
-      const amUrl = new URL(link.getAttribute('href'), motionUrl).href
-      const details = await fetchAmendmentDetails(amUrl)
-      return { id: link.textContent.trim() || details.id, ...details }
-    })
-  )
+  const amResults = await mapWithConcurrency(amLinks, 4, async link => {
+    const amUrl = new URL(link.getAttribute('href'), motionUrl).href
+    const details = await fetchAmendmentDetails(amUrl)
+    return { id: link.textContent.trim() || details.id, ...details }
+  })
 
-  const amendments = amResults
-    .filter(r => r.status === 'fulfilled').map(r => r.value)
-  amResults
-    .filter(r => r.status === 'rejected').forEach(r => console.error('Amendment fetch failed:', r.reason))
+  const amendments = []
+  for (const r of amResults) {
+    if (r.status === 'fulfilled') amendments.push(r.value)
+    else console.error('Amendment fetch failed:', r.reason)
+  }
 
   return { id, title, applicant, text, reasoning, amendments }
 }
