@@ -97,7 +97,10 @@ export async function showAmendmentsModal() {
       allAmendments = data.amendments
       renderList(searchInput.value)
     } catch (err) {
-      listEl.innerHTML = `<div class="error">Fehler beim Laden: ${err.message}</div>`
+      const msg = (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted'))
+        ? 'Zeitüberschreitung – bitte erneut versuchen (Aktualisieren im Modal)'
+        : err.message
+      listEl.innerHTML = `<div class="error">Fehler beim Laden: ${msg}</div>`
     }
   }
 

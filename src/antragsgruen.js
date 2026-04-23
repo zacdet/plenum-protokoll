@@ -1,26 +1,34 @@
 
 const PROXY = url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-const TIMEOUT_MS = 12000
+const TIMEOUT_MS = 25000
 const CACHE_TTL = 3 * 60 * 1000
 
 const _cache = new Map()
 
-async function proxyFetch(url) {
+async function proxyFetch(url, retries = 2) {
   const hit = _cache.get(url)
   if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.html
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-  try {
-    const resp = await fetch(PROXY(url), { signal: controller.signal })
-    clearTimeout(timer)
-    const html = await resp.text()
-    _cache.set(url, { html, ts: Date.now() })
-    return html
-  } catch (e) {
-    clearTimeout(timer)
-    throw e
+  let lastErr
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(
+      () => controller.abort(new DOMException('Zeitüberschreitung nach ' + TIMEOUT_MS / 1000 + 's', 'TimeoutError')),
+      TIMEOUT_MS
+    )
+    try {
+      const resp = await fetch(PROXY(url), { signal: controller.signal })
+      clearTimeout(timer)
+      const html = await resp.text()
+      _cache.set(url, { html, ts: Date.now() })
+      return html
+    } catch (e) {
+      clearTimeout(timer)
+      lastErr = e
+      if (attempt < retries) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+    }
   }
+  throw lastErr
 }
 
 export function prefetch(url) {
