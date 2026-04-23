@@ -174,20 +174,33 @@ async function insertFullMotion(url) {
   motionLines.push('}}')
 
   for (const line of motionLines) {
-    nodes.push(line
-      ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
-      : { type: 'paragraph' }
-    )
+    nodes.push(lineToNode(line))
   }
 
   nodes.push({ type: 'paragraph' })
   _editor.chain().focus().insertContent(nodes).run()
 }
 
+function lineToNode(line) {
+  const headingMatch = line.match(/^(={2,6})\s+(.*?)\s+={2,6}$/)
+  if (headingMatch) {
+    return {
+      type: 'heading',
+      attrs: { level: Math.min(headingMatch[1].length, 6) },
+      content: headingMatch[2] ? [{ type: 'text', text: headingMatch[2] }] : [],
+    }
+  }
+  const bulletMatch = line.match(/^(\*+)\s?(.*)$/)
+  if (bulletMatch) {
+    const depth = bulletMatch[1].length
+    const text  = bulletMatch[2]
+    let item = { type: 'listItem', content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }] }
+    for (let i = 1; i < depth; i++) item = { type: 'listItem', content: [{ type: 'paragraph', content: [] }, { type: 'bulletList', content: [item] }] }
+    return { type: 'bulletList', content: [item] }
+  }
+  return { type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] }
+}
+
 function insertLines(lines) {
-  const content = lines.map(line => ({
-    type: 'paragraph',
-    content: line ? [{ type: 'text', text: line }] : []
-  }))
-  _editor.chain().focus().insertContent(content).run()
+  _editor.chain().focus().insertContent(lines.map(lineToNode)).run()
 }
