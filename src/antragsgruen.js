@@ -38,7 +38,7 @@ export async function fetchFullMotionData(motionUrl) {
   }
 }
 
-export async function fetchAmendments(consultationUrl) {
+export async function fetchAllMotions(consultationUrl) {
   const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(consultationUrl)}`
   const response = await fetch(proxyUrl)
   const html = await response.text()
@@ -46,19 +46,16 @@ export async function fetchAmendments(consultationUrl) {
   const doc = parser.parseFromString(html, 'text/html')
 
   const results = []
-  const motions = doc.querySelectorAll('.motion')
-  
-  motions.forEach(motionEl => {
+  doc.querySelectorAll('.motion').forEach(motionEl => {
     const motionTitleEl = motionEl.querySelector('.motionTitle')
     const motionPrefixEl = motionEl.querySelector('.motionPrefix')
     const prefix = motionPrefixEl?.textContent.trim() || ''
     const title = motionTitleEl?.textContent.trim() || ''
-    const motionLink = motionEl.querySelector('.motionLink' + motionEl.className.match(/motionRow(\d+)/)?.[1] || 'a') 
-      || motionEl.querySelector('a')
+    const motionLink = motionEl.querySelector('a.motionLink' + (motionEl.className.match(/motionRow(\d+)/)?.[1] || '')) 
+      || motionEl.querySelector('.title a')
 
     if (motionLink) {
       results.push({
-        type: 'motion',
         id: prefix,
         title: title,
         url: new URL(motionLink.getAttribute('href'), consultationUrl).href,
@@ -66,7 +63,32 @@ export async function fetchAmendments(consultationUrl) {
       })
     }
   })
+  return results
+}
 
+export async function fetchAllAmendments(consultationUrl) {
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(consultationUrl)}`
+  const response = await fetch(proxyUrl)
+  const html = await response.text()
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+
+  const results = []
+  doc.querySelectorAll('.amendment').forEach(amEl => {
+    const link = amEl.querySelector('a')
+    const motionEl = amEl.closest('.motion')
+    const motionTitle = motionEl?.querySelector('.motionTitle')?.textContent.trim() || ''
+    const motionPrefix = motionEl?.querySelector('.motionPrefix')?.textContent.trim() || ''
+
+    if (link) {
+      results.push({
+        id: link.textContent.trim(),
+        motionTitle: `${motionPrefix} ${motionTitle}`,
+        url: new URL(link.getAttribute('href'), consultationUrl).href,
+        fullTitle: `${link.textContent.trim()} zu ${motionPrefix} ${motionTitle}`
+      })
+    }
+  })
   return results
 }
 

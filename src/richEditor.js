@@ -1,6 +1,66 @@
-import { Editor } from '@tiptap/core'
+import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
+
+const WikiTemplateExtension = Extension.create({
+  name: 'wikiTemplate',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['paragraph'],
+        attributes: {
+          isTemplate: {
+            default: false,
+            parseHTML: element => element.hasAttribute('data-template'),
+            renderHTML: attributes => {
+              const attrs = {}
+              if (attributes.isTemplate) {
+                attrs.class = 'wiki-template-line'
+                attrs['data-template'] = ''
+              }
+              if (attributes.isTemplateStart) attrs['data-template-start'] = ''
+              if (attributes.isTemplateEnd) attrs['data-template-end'] = ''
+              return attrs
+            },
+          },
+          isTemplateStart: { default: false },
+          isTemplateEnd: { default: false },
+        },
+      },
+    ]
+  },
+  onUpdate() {
+    const { state, view } = this.editor
+    const { doc } = state
+    let inTemplate = false
+
+    const transaction = state.tr
+    doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph') {
+        const text = node.textContent.trim()
+        const isStart = text.startsWith('{{')
+        const isEnd = text.endsWith('}}') || text === '}}'
+        
+        let newIsTemplate = inTemplate || isStart
+        if (isStart) inTemplate = true
+        
+        if (node.attrs.isTemplate !== newIsTemplate || node.attrs.isTemplateStart !== isStart || node.attrs.isTemplateEnd !== isEnd) {
+          transaction.setNodeMarkup(pos, null, {
+            ...node.attrs,
+            isTemplate: newIsTemplate,
+            isTemplateStart: isStart,
+            isTemplateEnd: isEnd
+          })
+        }
+
+        if (isEnd) inTemplate = false
+      }
+    })
+    if (transaction.docChanged) {
+      view.dispatch(transaction)
+    }
+  }
+})
 
 export function createRichEditor(domElement, yXmlFragment, awareness, identity) {
   const editor = new Editor({
@@ -8,6 +68,7 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
     extensions: [
       StarterKit.configure({ undoRedo: false }),
       Collaboration.configure({ fragment: yXmlFragment }),
+      WikiTemplateExtension,
     ],
     autofocus: true,
     editorProps: {

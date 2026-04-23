@@ -608,3 +608,59 @@ button.btn-secondary {
 .ag-list .error {
   color: var(--color-danger);
 }
+
+/* Tabs im Modal */
+.modal-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 16px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.tab-btn:hover {
+  background: var(--color-bg-highlight);
+  color: var(--color-text);
+}
+
+.tab-btn.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* Wiki-Template Styling im Rich Editor */
+.wiki-template-line {
+  background: rgba(77, 171, 247, 0.05);
+  border-left: 3px solid var(--color-accent);
+  padding-left: 12px !important;
+  margin-left: 8px;
+  font-family: var(--font-ui);
+}
+
+/* Verstecke Syntax-Elemente im Rich Editor, aber behalte sie im Text */
+.wiki-template-line {
+  color: var(--color-text);
+}
+
+/* Die Zeilen mit {{ und }} erhalten ein spezielles Aussehen */
+.wiki-template-line[data-template-start],
+.wiki-template-line[data-template-end] {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+/* Optional: Markierung für den Quelltext */
+#quelltext-content .wl-template {
+  color: var(--color-accent);
+}
