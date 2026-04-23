@@ -2,7 +2,7 @@ import { Editor, Extension, textblockTypeInputRule } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 
 const collapsedStarts   = new Set()  // template block positions
 const collapsedHeadings = new Set()  // heading positions
@@ -24,6 +24,28 @@ const WikiHeadingExtension = Extension.create({
         getAttributes: match => ({ level: Math.min(match[1].length, 6) }),
       }),
     ]
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        const { state, view } = editor
+        const { $from } = state.selection
+        if ($from.parent.type.name !== 'heading') return false
+        const headingPos = $from.before($from.depth)
+        if (!collapsedHeadings.has(headingPos)) return false
+
+        collapsedHeadings.delete(headingPos)
+        const headingNode = state.doc.nodeAt(headingPos)
+        const afterHeading = headingPos + headingNode.nodeSize
+        const tr = state.tr
+          .setMeta('wikiFoldingUpdate', true)
+          .insert(afterHeading, state.schema.nodes.paragraph.create())
+        tr.setSelection(TextSelection.near(tr.doc.resolve(afterHeading + 1)))
+        view.dispatch(tr)
+        return true
+      },
+    }
   },
 
   addProseMirrorPlugins() {
