@@ -234,6 +234,69 @@ const WikiSyntaxExtension = Extension.create({
   },
 })
 
+// ─── Wiki list conversion (* / ** / *** → bulletList) ────────────────────────
+const BULLET_LINE_RE = /^(\*+)\s*(.*)/
+
+function buildNestedList(items, schema) {
+  const minDepth = Math.min(...items.map(it => it.depth))
+
+  function build(slice, depth) {
+    const listItems = []
+    let i = 0
+    while (i < slice.length) {
+      if (slice[i].depth !== depth) { i++; continue }
+      let j = i + 1
+      while (j < slice.length && slice[j].depth > depth) j++
+      const para = schema.nodes.paragraph.create(
+        {}, slice[i].text ? [schema.text(slice[i].text)] : []
+      )
+      const sub = slice.slice(i + 1, j)
+      listItems.push(schema.nodes.listItem.create(
+        {}, sub.length ? [para, build(sub, depth + 1)] : [para]
+      ))
+      i = j
+    }
+    return schema.nodes.bulletList.create({}, listItems)
+  }
+
+  return build(items, minDepth)
+}
+
+const WikiListExtension = Extension.create({
+  name: 'wikiList',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('wikiListConvert'),
+      appendTransaction(transactions, _old, newState) {
+        if (!transactions.some(tr => tr.docChanged)) return null
+
+        const groups = []
+        let current = []
+
+        newState.doc.forEach((node, pos) => {
+          if (node.type.name === 'paragraph') {
+            const m = node.textContent.match(BULLET_LINE_RE)
+            if (m) {
+              current.push({ pos, end: pos + node.nodeSize, depth: m[1].length, text: m[2] })
+              return
+            }
+          }
+          if (current.length) { groups.push([...current]); current = [] }
+        })
+        if (current.length) groups.push(current)
+        if (!groups.length) return null
+
+        const tr = newState.tr
+        for (const group of groups.reverse()) {
+          tr.replaceWith(group[0].pos, group[group.length - 1].end,
+            buildNestedList(group, newState.schema))
+        }
+        return tr
+      },
+    })]
+  },
+})
+
 // ─── Editor factory ───────────────────────────────────────────────────────────
 export function createRichEditor(domElement, yXmlFragment, awareness, identity) {
   return new Editor({
@@ -244,6 +307,7 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
       WikiFoldingExtension,
       WikiHeadingExtension,
       WikiSyntaxExtension,
+      WikiListExtension,
     ],
     autofocus: true,
     editorProps: { attributes: { class: 'rich-editor-content' } },
