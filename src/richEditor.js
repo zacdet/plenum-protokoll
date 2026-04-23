@@ -19,7 +19,10 @@ const WikiTemplateExtension = Extension.create({
                 attrs['data-template'] = ''
                 if (attributes.isCollapsed) attrs['data-collapsed'] = ''
               }
-              if (attributes.isTemplateStart) attrs['data-template-start'] = ''
+              if (attributes.isTemplateStart) {
+                attrs['data-template-start'] = ''
+                if (attributes.isCollapsedStatus) attrs.class = (attrs.class || '') + ' is-collapsed-trigger'
+              }
               if (attributes.isTemplateEnd) attrs['data-template-end'] = ''
               return attrs
             },
@@ -27,6 +30,10 @@ const WikiTemplateExtension = Extension.create({
           isTemplateStart: { default: false },
           isTemplateEnd: { default: false },
           isCollapsed: { default: false },
+          isCollapsedStatus: { 
+            default: false,
+            parseHTML: element => element.classList.contains('is-collapsed-trigger'),
+          },
         },
       },
     ]
@@ -36,12 +43,16 @@ const WikiTemplateExtension = Extension.create({
       collapsedStarts: new Set(),
     }
   },
-  onUpdate() {
+  onTransaction({ transaction }) {
+    if (!transaction.docChanged && !transaction.getMeta('wikiTemplateUpdate')) return
+
     const { state, view } = this.editor
     const { doc } = state
     let currentTemplateStartPos = null
     
-    const transaction = state.tr
+    const tr = state.tr
+    let modified = false
+
     doc.descendants((node, pos) => {
       if (node.type.name === 'paragraph') {
         const text = node.textContent.trim()
@@ -50,30 +61,32 @@ const WikiTemplateExtension = Extension.create({
         
         if (isStart) currentTemplateStartPos = pos
 
-        const shouldBeCollapsed = currentTemplateStartPos !== null && 
-                                  this.storage.collapsedStarts.has(currentTemplateStartPos) && 
-                                  !isStart
+        const isCollapsed = currentTemplateStartPos !== null && this.storage.collapsedStarts.has(currentTemplateStartPos)
+        const shouldBeHidden = isCollapsed && !isStart
 
         if (node.attrs.isTemplate !== (currentTemplateStartPos !== null) || 
             node.attrs.isTemplateStart !== isStart || 
             node.attrs.isTemplateEnd !== isEnd ||
-            node.attrs.isCollapsed !== shouldBeCollapsed) {
+            node.attrs.isCollapsed !== shouldBeHidden ||
+            node.attrs.isCollapsedStatus !== isCollapsed) {
           
-          transaction.setNodeMarkup(pos, null, {
+          tr.setNodeMarkup(pos, null, {
             ...node.attrs,
             isTemplate: currentTemplateStartPos !== null,
             isTemplateStart: isStart,
             isTemplateEnd: isEnd,
-            isCollapsed: shouldBeCollapsed
+            isCollapsed: shouldBeHidden,
+            isCollapsedStatus: isCollapsed
           })
+          modified = true
         }
 
         if (isEnd) currentTemplateStartPos = null
       }
     })
     
-    if (transaction.docChanged) {
-      view.dispatch(transaction)
+    if (modified) {
+      view.dispatch(tr)
     }
   }
 })
@@ -91,17 +104,21 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
       attributes: { class: 'rich-editor-content' },
       handleClick(view, pos, event) {
         const { state } = view
-        const node = state.doc.nodeAt(state.doc.resolve(pos).before())
+        // Find the block at the click position
+        const $pos = state.doc.resolve(pos)
+        const node = $pos.parent
+        const nodePos = $pos.before()
+
         if (node?.attrs?.isTemplateStart) {
-          const startPos = state.doc.resolve(pos).before()
           const extension = editor.extensionManager.extensions.find(e => e.name === 'wikiTemplate')
-          if (extension.storage.collapsedStarts.has(startPos)) {
-            extension.storage.collapsedStarts.delete(startPos)
+          if (extension.storage.collapsedStarts.has(nodePos)) {
+            extension.storage.collapsedStarts.delete(nodePos)
           } else {
-            extension.storage.collapsedStarts.add(startPos)
+            extension.storage.collapsedStarts.add(nodePos)
           }
-          // Force update
-          editor.commands.focus()
+          
+          // Trigger a re-render by dispatching a dummy transaction
+          view.dispatch(state.tr.setMeta('wikiTemplateUpdate', true))
           return true
         }
         return false

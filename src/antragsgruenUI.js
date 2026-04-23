@@ -128,12 +128,12 @@ async function insertSingleAmendment(url) {
   const am = await fetchAmendmentDetails(url)
   
   const lines = [
-    `'''${am.title.split(':')[0].trim()}'''`,
+    `'''${am.id || am.title.split(':')[0].trim()}'''`,
     '{{Änderungsantrag',
-    `|1=${am.applicant || 'Antragsteller'}`,
-    `|2=${am.instructions}`,
-    `|3=${am.reasoning}`,
-    '|4=Abstimmung: ',
+    `|1=Antragsteller: ${am.applicant || 'N.N.'}`,
+    `|2=Antragstext: ${am.instructions}`,
+    `|3=Begründung: ${am.reasoning}`,
+    '|4=Beschluss: ',
     '}}'
   ]
 
@@ -147,26 +147,26 @@ async function insertFullMotion(url) {
   const lines = []
   lines.push(`=== ${data.id}: ${data.title} ===`)
   lines.push('{{Antrag')
-  lines.push(`|1=${data.applicant || 'Antragsteller'}`)
-  lines.push(`|2=${data.text}`)
+  lines.push(`|1=Antragsteller: ${data.applicant || 'N.N.'}`)
+  lines.push('|2=Antragstext: ' + data.text)
   lines.push('')
 
   // Amendments inside parameter 2
   data.amendments.forEach(am => {
     lines.push(`'''${am.id}'''`)
     lines.push('{{Änderungsantrag')
-    lines.push(`|1=${am.applicant || 'Antragsteller'}`)
-    lines.push(`|2=${am.instructions}`)
-    lines.push(`|3=${am.reasoning}`)
-    lines.push('|4=Abstimmung: ')
+    lines.push(`|1=Antragsteller: ${am.applicant || 'N.N.'}`)
+    lines.push(`|2=Antragstext: ${am.instructions}`)
+    lines.push(`|3=Begründung: ${am.reasoning}`)
+    lines.push('|4=Beschluss: ')
     lines.push('}}')
     lines.push('')
   })
 
-  lines.push(`|3=${data.reasoning}`)
-  lines.push('|4=DISKUSSION ZUM ANTRAG:')
+  lines.push(`|3=Begründung: ${data.reasoning}`)
+  lines.push('|4=Diskussion: ')
   lines.push('* ')
-  lines.push('|5=Abstimmung: ')
+  lines.push('|5=Beschluss: ')
   lines.push('}}')
 
   insertLines(lines)
