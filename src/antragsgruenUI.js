@@ -151,6 +151,7 @@ async function insertFullMotion(url) {
   lines.push(`|2=${data.text}`)
   lines.push('')
 
+  // Amendments inside parameter 2
   data.amendments.forEach(am => {
     lines.push(`'''${am.id}'''`)
     lines.push('{{Änderungsantrag')

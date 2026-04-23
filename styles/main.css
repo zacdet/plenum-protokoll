@@ -664,3 +664,32 @@ button.btn-secondary {
 #quelltext-content .wl-template {
   color: var(--color-accent);
 }
+
+/* Einklappbare Wiki-Templates */
+.wiki-template-line[data-collapsed] {
+  display: none !important;
+}
+
+.wiki-template-line[data-template-start] {
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+
+.wiki-template-line[data-template-start]::before {
+  content: '▼';
+  position: absolute;
+  left: -20px;
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+/* Wenn eingeklappt, zeige einen anderen Indikator und verstecke den Rest */
+.wiki-template-line[data-template-start].is-collapsed-trigger::before {
+  transform: rotate(-90deg);
+}
+
+/* Markierung für Zeilen, die einen eingeklappten Block kontrollieren */
+.wiki-template-line[data-template-start]:hover {
+  background: rgba(77, 171, 247, 0.15);
+}

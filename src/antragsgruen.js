@@ -7,9 +7,18 @@ export async function fetchFullMotionData(motionUrl) {
   const doc = parser.parseFromString(html, 'text/html')
 
   const title = doc.querySelector('h1')?.textContent.trim() || ''
-  const applicant = doc.querySelector('.metadata .applicant')?.textContent.trim() || ''
-  const reasoning = doc.querySelector('.reasoning .content')?.textContent.trim() || ''
-  const text = doc.querySelector('.motion-text, .textOrig')?.textContent.trim() || ''
+  const applicant = doc.querySelector('.metadata .applicant, .meta .applicant')?.textContent.trim() || ''
+  const reasoning = doc.querySelector('.reasoning .content, .begruendung .content')?.textContent.trim() || ''
+  
+  // Antragsgrün uses specific classes for the original text
+  const textEl = doc.querySelector('.textOrig') || doc.querySelector('.motion-text') || doc.querySelector('.antragstext');
+  let text = ''
+  if (textEl) {
+    // Remove line numbers if present
+    const clone = textEl.cloneNode(true)
+    clone.querySelectorAll('.lineNumber, .line-number').forEach(el => el.remove())
+    text = clone.textContent.trim()
+  }
 
   const amendments = []
   const amLinks = doc.querySelectorAll('.amendments li a, .amendmentRow a')

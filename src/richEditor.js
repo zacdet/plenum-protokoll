@@ -17,6 +17,7 @@ const WikiTemplateExtension = Extension.create({
               if (attributes.isTemplate) {
                 attrs.class = 'wiki-template-line'
                 attrs['data-template'] = ''
+                if (attributes.isCollapsed) attrs['data-collapsed'] = ''
               }
               if (attributes.isTemplateStart) attrs['data-template-start'] = ''
               if (attributes.isTemplateEnd) attrs['data-template-end'] = ''
@@ -25,15 +26,21 @@ const WikiTemplateExtension = Extension.create({
           },
           isTemplateStart: { default: false },
           isTemplateEnd: { default: false },
+          isCollapsed: { default: false },
         },
       },
     ]
   },
+  addStorage() {
+    return {
+      collapsedStarts: new Set(),
+    }
+  },
   onUpdate() {
     const { state, view } = this.editor
     const { doc } = state
-    let inTemplate = false
-
+    let currentTemplateStartPos = null
+    
     const transaction = state.tr
     doc.descendants((node, pos) => {
       if (node.type.name === 'paragraph') {
@@ -41,21 +48,30 @@ const WikiTemplateExtension = Extension.create({
         const isStart = text.startsWith('{{')
         const isEnd = text.endsWith('}}') || text === '}}'
         
-        let newIsTemplate = inTemplate || isStart
-        if (isStart) inTemplate = true
-        
-        if (node.attrs.isTemplate !== newIsTemplate || node.attrs.isTemplateStart !== isStart || node.attrs.isTemplateEnd !== isEnd) {
+        if (isStart) currentTemplateStartPos = pos
+
+        const shouldBeCollapsed = currentTemplateStartPos !== null && 
+                                  this.storage.collapsedStarts.has(currentTemplateStartPos) && 
+                                  !isStart
+
+        if (node.attrs.isTemplate !== (currentTemplateStartPos !== null) || 
+            node.attrs.isTemplateStart !== isStart || 
+            node.attrs.isTemplateEnd !== isEnd ||
+            node.attrs.isCollapsed !== shouldBeCollapsed) {
+          
           transaction.setNodeMarkup(pos, null, {
             ...node.attrs,
-            isTemplate: newIsTemplate,
+            isTemplate: currentTemplateStartPos !== null,
             isTemplateStart: isStart,
-            isTemplateEnd: isEnd
+            isTemplateEnd: isEnd,
+            isCollapsed: shouldBeCollapsed
           })
         }
 
-        if (isEnd) inTemplate = false
+        if (isEnd) currentTemplateStartPos = null
       }
     })
+    
     if (transaction.docChanged) {
       view.dispatch(transaction)
     }
@@ -73,6 +89,23 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
     autofocus: true,
     editorProps: {
       attributes: { class: 'rich-editor-content' },
+      handleClick(view, pos, event) {
+        const { state } = view
+        const node = state.doc.nodeAt(state.doc.resolve(pos).before())
+        if (node?.attrs?.isTemplateStart) {
+          const startPos = state.doc.resolve(pos).before()
+          const extension = editor.extensionManager.extensions.find(e => e.name === 'wikiTemplate')
+          if (extension.storage.collapsedStarts.has(startPos)) {
+            extension.storage.collapsedStarts.delete(startPos)
+          } else {
+            extension.storage.collapsedStarts.add(startPos)
+          }
+          // Force update
+          editor.commands.focus()
+          return true
+        }
+        return false
+      }
     },
   })
   return editor
