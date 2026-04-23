@@ -1,4 +1,14 @@
 
+function extractApplicant(doc) {
+  for (const row of doc.querySelectorAll('table.motionDataTable tr')) {
+    const th = row.querySelector('th')
+    if (th && th.textContent.includes('Antragsteller')) {
+      return row.querySelector('td')?.textContent.trim() || ''
+    }
+  }
+  return ''
+}
+
 export async function fetchFullMotionData(motionUrl) {
   const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(motionUrl)}`
   const response = await fetch(proxyUrl)
@@ -6,47 +16,46 @@ export async function fetchFullMotionData(motionUrl) {
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
 
-  const title = doc.querySelector('h1')?.textContent.trim() || ''
-  const applicant = doc.querySelector('.metadata .applicant, .meta .applicant')?.textContent.trim() || ''
-  const reasoning = doc.querySelector('.reasoning .content, .begruendung .content')?.textContent.trim() || ''
-  
-  // Antragsgrün uses specific classes for the original text paragraphs
-  const textEls = doc.querySelectorAll('.textOrig, .motion-text, .antragstext');
+  const h1Text = doc.querySelector('h1')?.textContent.trim() || ''
+  const colonIdx = h1Text.indexOf(':')
+  const id = colonIdx >= 0 ? h1Text.slice(0, colonIdx).trim() : ''
+  const title = colonIdx >= 0 ? h1Text.slice(colonIdx + 1).trim() : h1Text
+
+  const applicant = extractApplicant(doc)
+
+  const reasoningEl = doc.querySelector('.motionTextHolder h2, .motionTextHolder h3')
+  let reasoning = ''
+  if (reasoningEl && /begründung/i.test(reasoningEl.textContent)) {
+    reasoning = reasoningEl.closest('.motionTextHolder')?.querySelector('.text')?.textContent.trim() || ''
+  }
+
+  const textEls = doc.querySelectorAll('.textOrig')
   let paragraphs = []
   textEls.forEach(el => {
-    // Remove line numbers if present
     const clone = el.cloneNode(true)
-    clone.querySelectorAll('.lineNumber, .line-number').forEach(e => e.remove())
+    clone.querySelectorAll('.lineNumber, .line-number, .privateParagraphNoteHolder').forEach(e => e.remove())
     const pText = clone.textContent.trim()
     if (pText) paragraphs.push(pText)
   })
-  let text = paragraphs.join('\n\n')
+  const text = paragraphs.join('\n\n')
 
   const amendments = []
-  const amLinks = doc.querySelectorAll('.amendments li a, .amendmentRow a')
-  
+  const amLinks = doc.querySelectorAll('ul.amendments li a')
+
   for (const link of amLinks) {
-    const amUrl = new URL(link.getAttribute('href'), motionUrl).href
+    const href = link.getAttribute('href')
+    if (!href) continue
+    const amUrl = new URL(href, motionUrl).href
     try {
       const amDetails = await fetchAmendmentDetails(amUrl)
-      // Extract the simple ID like "Ä1" from text or title
-      const amId = link.textContent.trim() || amDetails.title.split(':')[0].trim()
-      amendments.push({
-        id: amId,
-        ...amDetails
-      })
+      const amId = link.textContent.trim() || amDetails.title.split(' ')[0].trim()
+      amendments.push({ id: amId, ...amDetails })
     } catch (e) {
-      console.error("Failed to fetch amendment", amUrl, e)
+      console.error('Failed to fetch amendment', amUrl, e)
     }
   }
 
-  return {
-    title,
-    applicant,
-    text,
-    reasoning,
-    amendments
-  }
+  return { id, title, applicant, text, reasoning, amendments }
 }
 
 export async function fetchAllMotions(consultationUrl) {
@@ -57,19 +66,16 @@ export async function fetchAllMotions(consultationUrl) {
   const doc = parser.parseFromString(html, 'text/html')
 
   const results = []
-  doc.querySelectorAll('.motion').forEach(motionEl => {
-    const motionTitleEl = motionEl.querySelector('.motionTitle')
-    const motionPrefixEl = motionEl.querySelector('.motionPrefix')
-    const prefix = motionPrefixEl?.textContent.trim() || ''
-    const title = motionTitleEl?.textContent.trim() || ''
-    const motionLink = motionEl.querySelector('a.motionLink' + (motionEl.className.match(/motionRow(\d+)/)?.[1] || '')) 
-      || motionEl.querySelector('.title a')
+  doc.querySelectorAll('li.motion').forEach(motionEl => {
+    const prefix = motionEl.querySelector('.motionPrefix')?.textContent.trim() || ''
+    const title = motionEl.querySelector('.motionTitle')?.textContent.trim() || ''
+    const link = motionEl.querySelector('a[class*="motionLink"]')
 
-    if (motionLink) {
+    if (link) {
       results.push({
         id: prefix,
-        title: title,
-        url: new URL(motionLink.getAttribute('href'), consultationUrl).href,
+        title,
+        url: new URL(link.getAttribute('href'), consultationUrl).href,
         fullTitle: `${prefix}: ${title}`
       })
     }
@@ -85,18 +91,19 @@ export async function fetchAllAmendments(consultationUrl) {
   const doc = parser.parseFromString(html, 'text/html')
 
   const results = []
-  doc.querySelectorAll('.amendment').forEach(amEl => {
+  doc.querySelectorAll('li.amendment').forEach(amEl => {
     const link = amEl.querySelector('a')
-    const motionEl = amEl.closest('.motion')
-    const motionTitle = motionEl?.querySelector('.motionTitle')?.textContent.trim() || ''
+    const motionEl = amEl.closest('li.motion')
     const motionPrefix = motionEl?.querySelector('.motionPrefix')?.textContent.trim() || ''
+    const motionTitle = motionEl?.querySelector('.motionTitle')?.textContent.trim() || ''
 
     if (link) {
+      const amId = link.textContent.trim()
       results.push({
-        id: link.textContent.trim(),
-        motionTitle: `${motionPrefix} ${motionTitle}`,
+        id: amId,
+        motionTitle: `${motionPrefix} ${motionTitle}`.trim(),
         url: new URL(link.getAttribute('href'), consultationUrl).href,
-        fullTitle: `${link.textContent.trim()} zu ${motionPrefix} ${motionTitle}`
+        fullTitle: `${amId} zu ${motionPrefix} ${motionTitle}`.trim()
       })
     }
   })
@@ -110,21 +117,20 @@ export async function fetchAmendmentDetails(amendmentUrl) {
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
 
-  const title = doc.querySelector('h1')?.textContent.trim() || ''
-  const reasoningEl = doc.querySelector('.reasoning .content, #amendment-reasoning') 
-  // Antragsgrün often has different structures. Let's try common ones.
+  const h1Text = doc.querySelector('h1')?.textContent.trim() || ''
+  const title = h1Text
+  const id = h1Text.split(' zu ')[0].trim()
+
+  const applicant = extractApplicant(doc)
+
+  const reasoningEl = doc.querySelector('#amendmentExplanation .text, section#amendmentExplanation .paragraph .text')
   const reasoning = reasoningEl?.textContent.trim() || ''
-  
-  // Diff parsing
-  // The diff is often in .diff-container or similar.
-  // In the example I saw it was inside .text.motionTextFormattings.textAmendment
-  const diffEls = doc.querySelectorAll('.text.motionTextFormattings.textAmendment')
+
+  const diffEls = doc.querySelectorAll('.changedText .text.motionTextFormattings')
   let instructions = ''
-  
+
   if (diffEls.length > 0) {
     diffEls.forEach(el => {
-      // Clean up the diff to a readable string with markings
-      // We can use [DEL: ...] and [INS: ...] or similar
       const clone = el.cloneNode(true)
       clone.querySelectorAll('del').forEach(del => {
         del.textContent = `(gelöscht: ${del.textContent})`
@@ -134,15 +140,7 @@ export async function fetchAmendmentDetails(amendmentUrl) {
       })
       instructions += clone.textContent.trim() + '\n\n'
     })
-  } else {
-    // Fallback: try to find any diff tags
-    const contentEl = doc.querySelector('.amendment-content')
-    if (contentEl) instructions = contentEl.textContent.trim()
   }
 
-  return {
-    title,
-    reasoning,
-    instructions: instructions.trim()
-  }
+  return { id, title, applicant, reasoning, instructions: instructions.trim() }
 }
