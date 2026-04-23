@@ -127,36 +127,58 @@ async function insertSingleAmendment(url) {
   if (!_editor) return
   const am = await fetchAmendmentDetails(url)
 
-  const displayId = am.title.split(':')[0].trim()
-  const lines = [
-    `{{Änderungsantrag ${displayId}`,
-    `|1=Antragsteller: ${am.applicant || 'N.N.'}`,
-    `|2=Antragstext: ${am.instructions}`,
-    `|3=Begründung: ${am.reasoning}`,
-    '|4=Beschluss: ',
-    '}}'
-  ]
-
-  insertLines(lines)
+  insertLines([
+    `'''${am.id}'''`,
+    '{{Änderungsantrag',
+    `|1=${am.applicant || 'N.N.'}`,
+    `|2=${am.instructions}`,
+    `|3=${am.reasoning || 'keiner'}`,
+    '|4=Abstimmung: ',
+    '}}',
+  ])
 }
 
 async function insertFullMotion(url) {
   if (!_editor) return
   const data = await fetchFullMotionData(url)
-  
-  const lines = []
-  lines.push(`=== ${data.id}: ${data.title} ===`)
-  lines.push('{{Antrag')
-  lines.push(`|1=Antragsteller: ${data.applicant || 'N.N.'}`)
-  lines.push('|2=Antragstext: ' + data.text)
-  lines.push('')
-  lines.push(`|3=Begründung: ${data.reasoning}`)
-  lines.push('|4=Diskussion: ')
-  lines.push('* ')
-  lines.push('|5=Beschluss: ')
-  lines.push('}}')
 
-  insertLines(lines)
+  const nodes = [
+    { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${data.id}: ${data.title}` }] },
+  ]
+
+  const motionLines = [
+    '{{Antrag',
+    `|1=${data.applicant || 'N.N.'}`,
+    `|2=${data.text}`,
+    '',
+  ]
+
+  for (const am of data.amendments) {
+    motionLines.push(`'''${am.id}'''`)
+    motionLines.push('{{Änderungsantrag')
+    motionLines.push(`|1=${am.applicant || 'N.N.'}`)
+    motionLines.push(`|2=${am.instructions}`)
+    motionLines.push(`|3=${am.reasoning || 'keiner'}`)
+    motionLines.push('|4=Abstimmung: ')
+    motionLines.push('}}')
+    motionLines.push('')
+  }
+
+  motionLines.push(`|3=${data.reasoning}`)
+  motionLines.push('|4=DISKUSSION ZUM ANTRAG:')
+  motionLines.push('* ')
+  motionLines.push('|5=Abstimmung: ')
+  motionLines.push('}}')
+
+  for (const line of motionLines) {
+    nodes.push(line
+      ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
+      : { type: 'paragraph' }
+    )
+  }
+
+  nodes.push({ type: 'paragraph' })
+  _editor.chain().focus().insertContent(nodes).run()
 }
 
 function insertLines(lines) {

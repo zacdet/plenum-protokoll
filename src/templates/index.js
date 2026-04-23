@@ -28,11 +28,14 @@ export const TEMPLATE_GROUPS = [
         id: 'antrag',
         label: 'Antrag',
         prompt: [
-          { key: 'steller',    label: 'Antragsteller',  default: '' },
-          { key: 'text',       label: 'Antragstext',    default: '' },
-          { key: 'begruendung', label: 'Begründung',    default: '' },
+          { key: 'nr',          label: 'Antrags-Nr. (z.B. A1)',  default: '' },
+          { key: 'titel',       label: 'Titel',                  default: '' },
+          { key: 'steller',     label: 'Antragsteller',          default: '' },
+          { key: 'text',        label: 'Antragstext',            default: '' },
+          { key: 'begruendung', label: 'Begründung',             default: '' },
         ],
-        template: ({ steller, text, begruendung }) => [
+        template: ({ nr, titel, steller, text, begruendung }) => [
+          { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${nr}: ${titel}` }] },
           ...p(
             '{{Antrag',
             `|1=${steller}`,
@@ -51,12 +54,14 @@ export const TEMPLATE_GROUPS = [
         id: 'aenderungsantrag',
         label: 'Änderungsantrag',
         prompt: [
+          { key: 'nr',           label: 'ÄA-Nr. (z.B. Ä1)',      default: '' },
           { key: 'name',         label: 'Name (Hochschule)',      default: '' },
           { key: 'anweisung',    label: 'Änderungsanweisung',     default: '' },
           { key: 'begruendung',  label: 'Begründung',             default: '' },
         ],
-        template: ({ name, anweisung, begruendung }) => [
+        template: ({ nr, name, anweisung, begruendung }) => [
           ...p(
+            `'''${nr}'''`,
             '{{Änderungsantrag',
             `|1=${name}`,
             `|2=${anweisung}`,
@@ -72,10 +77,13 @@ export const TEMPLATE_GROUPS = [
         id: 'neufassung',
         label: 'Neufassung',
         prompt: [
-          { key: 'name',  label: 'Name (Hochschule)', default: '' },
-          { key: 'text',  label: 'Antragstext',       default: '' },
+          { key: 'nr',    label: 'Antrags-Nr. (z.B. A1)',  default: '' },
+          { key: 'titel', label: 'Titel',                  default: '' },
+          { key: 'name',  label: 'Name (Hochschule)',       default: '' },
+          { key: 'text',  label: 'Antragstext',            default: '' },
         ],
-        template: ({ name, text }) => [
+        template: ({ nr, titel, name, text }) => [
+          { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${nr}: ${titel}` }] },
           ...p(
             '{{Antrag',
             `|1=${name}`,
