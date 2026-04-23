@@ -76,7 +76,7 @@ export async function showAmendmentsModal() {
       const m = filtered[idx]
       item.addEventListener('mouseenter', () => prefetch(m.url), { once: true })
 
-      item.querySelector('.ag-item-insert').onclick = async (btn => async () => {
+      item.querySelector('.ag-item-insert').onclick = (btn => async () => {
         btn.disabled = true
         btn.textContent = 'Lädt...'
         if (currentTab === 'amendments') {
