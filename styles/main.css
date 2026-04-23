@@ -693,3 +693,38 @@ button.btn-secondary {
 .wiki-template-line[data-template-start]:hover {
   background: rgba(77, 171, 247, 0.15);
 }
+
+/* Neue Einklapp-Logik via PM Decorations */
+.wiki-template-start {
+  cursor: pointer;
+  position: relative;
+  background: rgba(77, 171, 247, 0.1);
+  border-left: 3px solid var(--color-accent);
+  padding-left: 12px !important;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-accent);
+}
+
+.wiki-template-start::before {
+  content: '▼';
+  position: absolute;
+  left: -20px;
+  font-size: 10px;
+  color: var(--color-accent);
+  transition: transform 0.2s;
+}
+
+.wiki-template-start.is-collapsed::before {
+  transform: rotate(-90deg);
+}
+
+.wiki-template-line {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 12px !important;
+  background: rgba(77, 171, 247, 0.05);
+}
+
+.is-hidden {
+  display: none !important;
+}

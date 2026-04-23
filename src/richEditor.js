@@ -1,93 +1,87 @@
 import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
 
-const WikiTemplateExtension = Extension.create({
-  name: 'wikiTemplate',
-  addGlobalAttributes() {
-    return [
-      {
-        types: ['paragraph'],
-        attributes: {
-          isTemplate: {
-            default: false,
-            parseHTML: element => element.hasAttribute('data-template'),
-            renderHTML: attributes => {
-              const attrs = {}
-              if (attributes.isTemplate) {
-                attrs.class = 'wiki-template-line'
-                attrs['data-template'] = ''
-                if (attributes.isCollapsed) attrs['data-collapsed'] = ''
-              }
-              if (attributes.isTemplateStart) {
-                attrs['data-template-start'] = ''
-                if (attributes.isCollapsedStatus) attrs.class = (attrs.class || '') + ' is-collapsed-trigger'
-              }
-              if (attributes.isTemplateEnd) attrs['data-template-end'] = ''
-              return attrs
-            },
-          },
-          isTemplateStart: { default: false },
-          isTemplateEnd: { default: false },
-          isCollapsed: { default: false },
-          isCollapsedStatus: { 
-            default: false,
-            parseHTML: element => element.classList.contains('is-collapsed-trigger'),
-          },
-        },
-      },
-    ]
-  },
-  addStorage() {
-    return {
-      collapsedStarts: new Set(),
-    }
-  },
-  onTransaction({ transaction }) {
-    if (!transaction.docChanged && !transaction.getMeta('wikiTemplateUpdate')) return
+// Lokaler Speicher für eingeklappte Blöcke (nicht synchronisiert)
+const collapsedStarts = new Set()
 
-    const { state, view } = this.editor
-    const { doc } = state
-    let currentTemplateStartPos = null
-    
-    const tr = state.tr
-    let modified = false
+const WikiFoldingPlugin = new Plugin({
+  key: new PluginKey('wikiFolding'),
+  state: {
+    init() { return DecorationSet.empty },
+    apply(tr, oldState) {
+      const meta = tr.getMeta('wikiFoldingUpdate')
+      if (tr.docChanged || meta) {
+        const decorations = []
+        let currentTemplateStartPos = null
+        let isCollapsed = false
 
-    doc.descendants((node, pos) => {
-      if (node.type.name === 'paragraph') {
-        const text = node.textContent.trim()
-        const isStart = text.startsWith('{{')
-        const isEnd = text.endsWith('}}') || text === '}}'
-        
-        if (isStart) currentTemplateStartPos = pos
+        tr.doc.descendants((node, pos) => {
+          if (node.type.name === 'paragraph') {
+            const text = node.textContent.trim()
+            const isStart = text.startsWith('{{')
+            const isEnd = text.endsWith('}}') || text === '}}'
 
-        const isCollapsed = currentTemplateStartPos !== null && this.storage.collapsedStarts.has(currentTemplateStartPos)
-        const shouldBeHidden = isCollapsed && !isStart
+            if (isStart) {
+              currentTemplateStartPos = pos
+              isCollapsed = collapsedStarts.has(pos)
+              
+              // Dekorator für die Start-Zeile (Pfeil-Indikator)
+              decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+                class: 'wiki-template-start' + (isCollapsed ? ' is-collapsed' : ''),
+                'data-folding-trigger': 'true'
+              }))
+            } else if (currentTemplateStartPos !== null) {
+              // Markiere Zeilen innerhalb eines Templates
+              const classes = ['wiki-template-line']
+              if (isCollapsed) classes.push('is-hidden')
+              
+              decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+                class: classes.join(' ')
+              }))
+            }
 
-        if (node.attrs.isTemplate !== (currentTemplateStartPos !== null) || 
-            node.attrs.isTemplateStart !== isStart || 
-            node.attrs.isTemplateEnd !== isEnd ||
-            node.attrs.isCollapsed !== shouldBeHidden ||
-            node.attrs.isCollapsedStatus !== isCollapsed) {
-          
-          tr.setNodeMarkup(pos, null, {
-            ...node.attrs,
-            isTemplate: currentTemplateStartPos !== null,
-            isTemplateStart: isStart,
-            isTemplateEnd: isEnd,
-            isCollapsed: shouldBeHidden,
-            isCollapsedStatus: isCollapsed
-          })
-          modified = true
-        }
-
-        if (isEnd) currentTemplateStartPos = null
+            if (isEnd) {
+              currentTemplateStartPos = null
+              isCollapsed = false
+            }
+          }
+        })
+        return DecorationSet.create(tr.doc, decorations)
       }
-    })
-    
-    if (modified) {
-      view.dispatch(tr)
+      return oldState.map(tr.mapping, tr.doc)
     }
+  },
+  props: {
+    decorations(state) {
+      return this.getState(state)
+    },
+    handleClick(view, pos, event) {
+      const { state } = view
+      const $pos = state.doc.resolve(pos)
+      const nodePos = $pos.before()
+      const node = state.doc.nodeAt(nodePos)
+
+      if (node && node.textContent.trim().startsWith('{{')) {
+        if (collapsedStarts.has(nodePos)) {
+          collapsedStarts.delete(nodePos)
+        } else {
+          collapsedStarts.add(nodePos)
+        }
+        view.dispatch(state.tr.setMeta('wikiFoldingUpdate', true))
+        return true
+      }
+      return false
+    }
+  }
+})
+
+const WikiFoldingExtension = Extension.create({
+  name: 'wikiFolding',
+  addProseMirrorPlugins() {
+    return [WikiFoldingPlugin]
   }
 })
 
@@ -97,42 +91,21 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
     extensions: [
       StarterKit.configure({ undoRedo: false }),
       Collaboration.configure({ fragment: yXmlFragment }),
-      WikiTemplateExtension,
+      WikiFoldingExtension,
     ],
     autofocus: true,
     editorProps: {
       attributes: { class: 'rich-editor-content' },
-      handleClick(view, pos, event) {
-        const { state } = view
-        // Find the block at the click position
-        const $pos = state.doc.resolve(pos)
-        const node = $pos.parent
-        const nodePos = $pos.before()
-
-        if (node?.attrs?.isTemplateStart) {
-          const extension = editor.extensionManager.extensions.find(e => e.name === 'wikiTemplate')
-          if (extension.storage.collapsedStarts.has(nodePos)) {
-            extension.storage.collapsedStarts.delete(nodePos)
-          } else {
-            extension.storage.collapsedStarts.add(nodePos)
-          }
-          
-          // Trigger a re-render by dispatching a dummy transaction
-          view.dispatch(state.tr.setMeta('wikiTemplateUpdate', true))
-          return true
-        }
-        return false
-      }
     },
   })
   return editor
 }
 
 export function getEditorWikiContent(editor) {
-  return tiptapToWiki(editor.getJSON())
+  if (!editor || editor.destroyed) return ''
+  const json = editor.getJSON()
+  return tiptapToWiki(json)
 }
-
-// ─── TipTap JSON → Wiki-Syntax ────────────────────────────────────────────────
 
 function tiptapToWiki(doc) {
   if (!doc?.content) return ''
