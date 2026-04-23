@@ -23,9 +23,7 @@ const WikiFoldingPlugin = new Plugin({
       const meta = tr.getMeta('wikiFoldingUpdate')
       if (tr.docChanged || meta) {
         const decorations = []
-        let currentTemplateStartPos = null
-        let isCollapsed = false
-        let isAmendment = false
+        const templateStack = []
 
         tr.doc.descendants((node, pos) => {
           if (node.type.name === 'paragraph') {
@@ -34,26 +32,35 @@ const WikiFoldingPlugin = new Plugin({
             const isEnd = text === '}}' || (text.endsWith('}}') && !isStart)
 
             if (isStart) {
-              currentTemplateStartPos = pos
-              isCollapsed = collapsedStarts.has(pos)
-              isAmendment = text.startsWith('{{Änderungsantrag')
-              const cls = ['wiki-template-start', isAmendment ? 'amendment-template' : '', isCollapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')
-              decorations.push(Decoration.node(pos, pos + node.nodeSize, {
-                class: cls,
-                'data-folding-trigger': 'true'
-              }))
-            } else if (currentTemplateStartPos !== null) {
-              const classes = ['wiki-template-line', isAmendment ? 'amendment-template' : ''].filter(Boolean)
-              if (isCollapsed) classes.push('is-hidden')
+              const isAmendment = text.startsWith('{{Änderungsantrag')
+              const selfCollapsed = collapsedStarts.has(pos)
+              const outerCollapsed = templateStack.some(t => t.isCollapsed)
+
+              templateStack.push({ isAmendment, isCollapsed: selfCollapsed })
+
+              if (outerCollapsed) {
+                decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+                  class: 'wiki-template-line is-hidden'
+                }))
+              } else {
+                const cls = ['wiki-template-start', isAmendment ? 'amendment-template' : '', selfCollapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')
+                decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+                  class: cls,
+                  'data-folding-trigger': 'true'
+                }))
+              }
+            } else if (templateStack.length > 0) {
+              const innermost = templateStack[templateStack.length - 1]
+              const anyCollapsed = templateStack.some(t => t.isCollapsed)
+              const classes = ['wiki-template-line', innermost.isAmendment ? 'amendment-template' : ''].filter(Boolean)
+              if (anyCollapsed) classes.push('is-hidden')
               decorations.push(Decoration.node(pos, pos + node.nodeSize, {
                 class: classes.join(' ')
               }))
             }
 
-            if (isEnd) {
-              currentTemplateStartPos = null
-              isCollapsed = false
-              isAmendment = false
+            if (isEnd && templateStack.length > 0) {
+              templateStack.pop()
             }
           }
         })
@@ -158,7 +165,7 @@ function listItemToWiki(li, marker, depth) {
   const lines = []
   for (const child of li.content ?? []) {
     if (child.type === 'paragraph') {
-      lines.push(`${prefix} ${inlineToWiki(child.content)}`)
+      lines.push(`${prefix}${inlineToWiki(child.content)}`)
     } else if (child.type === 'bulletList') {
       for (const nested of child.content ?? [])
         lines.push(listItemToWiki(nested, '*', depth + 1))
