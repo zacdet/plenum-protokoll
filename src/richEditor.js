@@ -8,7 +8,7 @@ const collapsedStarts   = new Set()  // template block positions
 const collapsedHeadings = new Set()  // heading positions
 
 // ─── Wiki heading input rules + paste/insert conversion ──────────────────────
-const WIKI_HEADING_RE = /^(={2,6}) (.+?) ={2,}$/
+const WIKI_HEADING_RE = /^(={2,6})\s+(.+?)\s+={2,}$/
 
 const WikiHeadingExtension = Extension.create({
   name: 'wikiHeading',
@@ -201,6 +201,39 @@ const WikiFoldingExtension = Extension.create({
   addProseMirrorPlugins() { return [WikiFoldingPlugin] },
 })
 
+// ─── Inline syntax colouring (<del> → red, '''ins''' → green) ────────────────
+function buildSyntaxDecorations(doc) {
+  const decorations = []
+  doc.descendants((node, pos) => {
+    if (!node.isText) return
+    const text = node.text
+    let m
+    const delRe  = /<del>[\s\S]*?<\/del>/g
+    const boldRe = /'''[\s\S]*?'''/g
+    while ((m = delRe.exec(text))  !== null)
+      decorations.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: 'wiki-del' }))
+    while ((m = boldRe.exec(text)) !== null)
+      decorations.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: 'wiki-ins' }))
+  })
+  return DecorationSet.create(doc, decorations)
+}
+
+const WikiSyntaxExtension = Extension.create({
+  name: 'wikiSyntax',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('wikiSyntax'),
+      state: {
+        init(_, state) { return buildSyntaxDecorations(state.doc) },
+        apply(tr, old) { return tr.docChanged ? buildSyntaxDecorations(tr.doc) : old.map(tr.mapping, tr.doc) },
+      },
+      props: {
+        decorations(state) { return this.getState(state) },
+      },
+    })]
+  },
+})
+
 // ─── Editor factory ───────────────────────────────────────────────────────────
 export function createRichEditor(domElement, yXmlFragment, awareness, identity) {
   return new Editor({
@@ -210,6 +243,7 @@ export function createRichEditor(domElement, yXmlFragment, awareness, identity) 
       Collaboration.configure({ fragment: yXmlFragment }),
       WikiFoldingExtension,
       WikiHeadingExtension,
+      WikiSyntaxExtension,
     ],
     autofocus: true,
     editorProps: { attributes: { class: 'rich-editor-content' } },

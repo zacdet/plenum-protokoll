@@ -86,6 +86,10 @@
   border-radius: 3px 3px 3px 0; white-space: nowrap; color: #fff;
 }
 
+/* Wiki diff syntax colouring */
+.wiki-del { color: var(--color-danger); }
+.wiki-ins { color: var(--color-success); }
+
 /* Heading fold */
 .ProseMirror .heading-fold {
   cursor: pointer;
