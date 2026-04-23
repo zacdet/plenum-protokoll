@@ -7,15 +7,16 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 const collapsedStarts   = new Set()  // template block positions
 const collapsedHeadings = new Set()  // heading positions
 
-// ─── Wiki heading input rules (== → H2, === → H3, etc.) ──────────────────────
+// ─── Wiki heading input rules + paste/insert conversion ──────────────────────
+const WIKI_HEADING_RE = /^(={2,6}) (.+?) ={2,}$/
+
 const WikiHeadingExtension = Extension.create({
   name: 'wikiHeading',
-  addInputRules() {
-    const { schema } = this.editor
-    const headingType = schema.nodes.heading
-    if (!headingType) return []
 
-    // Fires when user types "== " / "=== " / "==== " at start of a text block
+  addInputRules() {
+    const headingType = this.editor.schema.nodes.heading
+    if (!headingType) return []
+    // Fires when user types "== " / "=== " at start of a block → converts to heading
     return [
       textblockTypeInputRule({
         find: /^(={2,6})\s$/,
@@ -23,6 +24,31 @@ const WikiHeadingExtension = Extension.create({
         getAttributes: match => ({ level: Math.min(match[1].length, 6) }),
       }),
     ]
+  },
+
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('wikiHeadingConvert'),
+      appendTransaction(transactions, _old, newState) {
+        if (!transactions.some(tr => tr.docChanged)) return null
+        const changes = []
+        newState.doc.descendants((node, pos) => {
+          if (node.type.name !== 'paragraph') return
+          const m = node.textContent.match(WIKI_HEADING_RE)
+          if (!m) return
+          changes.push({ pos, end: pos + node.nodeSize, level: Math.min(m[1].length, 6), text: m[2] })
+        })
+        if (!changes.length) return null
+        const tr = newState.tr
+        for (const { pos, end, level, text: t } of changes.reverse()) {
+          tr.replaceWith(pos, end, newState.schema.nodes.heading.create(
+            { level },
+            t ? [newState.schema.text(t)] : []
+          ))
+        }
+        return tr
+      },
+    })]
   },
 })
 
