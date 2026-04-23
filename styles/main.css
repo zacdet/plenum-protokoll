@@ -725,6 +725,22 @@ button.btn-secondary {
   background: rgba(77, 171, 247, 0.05);
 }
 
+/* Änderungsanträge: orange statt blau */
+.wiki-template-start.amendment-template {
+  background: rgba(251, 146, 60, 0.12);
+  border-left-color: #fb923c;
+  color: #fb923c;
+}
+
+.wiki-template-start.amendment-template::before {
+  color: #fb923c;
+}
+
+.wiki-template-line.amendment-template {
+  border-left-color: #fb923c;
+  background: rgba(251, 146, 60, 0.06);
+}
+
 .is-hidden {
   display: none !important;
 }

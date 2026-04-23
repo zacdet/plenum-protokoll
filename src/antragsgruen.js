@@ -132,18 +132,19 @@ export async function fetchAmendmentDetails(amendmentUrl) {
   const reasoningEl = doc.querySelector('#amendmentExplanation .text, section#amendmentExplanation .paragraph .text')
   const reasoning = reasoningEl?.textContent.trim() || ''
 
-  const diffEls = doc.querySelectorAll('.changedText .text.motionTextFormattings')
+  const diffEls = doc.querySelectorAll('.onlyChangedText .text.motionTextFormattings')
   let instructions = ''
 
   if (diffEls.length > 0) {
     diffEls.forEach(el => {
       const clone = el.cloneNode(true)
       clone.querySelectorAll('del').forEach(del => {
-        del.textContent = `(gelöscht: ${del.textContent})`
+        del.parentNode.replaceChild(doc.createTextNode(`<del>${del.textContent}</del>`), del)
       })
       clone.querySelectorAll('ins').forEach(ins => {
-        ins.textContent = `(neu: ${ins.textContent})`
+        ins.parentNode.replaceChild(doc.createTextNode(`'''${ins.textContent}'''`), ins)
       })
+      clone.querySelectorAll('.lineNumber, .line-number').forEach(e => e.remove())
       instructions += clone.textContent.trim() + '\n\n'
     })
   }

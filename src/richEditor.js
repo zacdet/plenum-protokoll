@@ -25,6 +25,7 @@ const WikiFoldingPlugin = new Plugin({
         const decorations = []
         let currentTemplateStartPos = null
         let isCollapsed = false
+        let isAmendment = false
 
         tr.doc.descendants((node, pos) => {
           if (node.type.name === 'paragraph') {
@@ -35,12 +36,14 @@ const WikiFoldingPlugin = new Plugin({
             if (isStart) {
               currentTemplateStartPos = pos
               isCollapsed = collapsedStarts.has(pos)
+              isAmendment = text.startsWith('{{Änderungsantrag')
+              const cls = ['wiki-template-start', isAmendment ? 'amendment-template' : '', isCollapsed ? 'is-collapsed' : ''].filter(Boolean).join(' ')
               decorations.push(Decoration.node(pos, pos + node.nodeSize, {
-                class: 'wiki-template-start' + (isCollapsed ? ' is-collapsed' : ''),
+                class: cls,
                 'data-folding-trigger': 'true'
               }))
             } else if (currentTemplateStartPos !== null) {
-              const classes = ['wiki-template-line']
+              const classes = ['wiki-template-line', isAmendment ? 'amendment-template' : ''].filter(Boolean)
               if (isCollapsed) classes.push('is-hidden')
               decorations.push(Decoration.node(pos, pos + node.nodeSize, {
                 class: classes.join(' ')
@@ -50,6 +53,7 @@ const WikiFoldingPlugin = new Plugin({
             if (isEnd) {
               currentTemplateStartPos = null
               isCollapsed = false
+              isAmendment = false
             }
           }
         })
