@@ -60,12 +60,13 @@ export async function showAmendmentsModal() {
       return
     }
 
+    const isAmendments = currentTab === 'amendments'
     listEl.innerHTML = filtered.map(m => `
       <div class="ag-item">
-        <div class="ag-item-id">${m.id}</div>
+        <div class="ag-item-id${isAmendments ? ' amendment' : ''}">${isAmendments ? `${m.id} zu ${m.motionPrefix}` : m.id}</div>
         <div class="ag-item-content">
-          <div class="ag-item-title">${currentTab === 'amendments' ? m.fullTitle : m.title}</div>
-          <div class="ag-item-subtitle">${currentTab === 'amendments' ? m.motionTitle : m.id}</div>
+          <div class="ag-item-title">${isAmendments ? m.fullTitle : m.title}</div>
+          <div class="ag-item-subtitle">${isAmendments ? m.motionTitle : m.id}</div>
         </div>
         <button class="ag-item-insert btn-primary">Einfügen</button>
       </div>

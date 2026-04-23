@@ -107,6 +107,7 @@ export async function fetchAllAmendments(consultationUrl) {
       const amId = link.textContent.trim()
       results.push({
         id: amId,
+        motionPrefix,
         motionTitle: `${motionPrefix} ${motionTitle}`.trim(),
         url: new URL(link.getAttribute('href'), consultationUrl).href,
         fullTitle: `${amId} zu ${motionPrefix} ${motionTitle}`.trim()
