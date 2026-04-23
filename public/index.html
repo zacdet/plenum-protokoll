@@ -20,6 +20,7 @@
     <div id="header-right">
       <span id="save-status" class="save-status"></span>
       <span id="connection-status" class="status-connecting">Verbinde…</span>
+      <button id="btn-toc" title="Inhaltsverzeichnis ein-/ausblenden">Inhalt</button>
       <button id="btn-quelltext" title="Wiki-Quelltext anzeigen">Quelltext</button>
       <button id="btn-backup" title="Backup-Kopie erstellen">Backup</button>
       <button id="btn-export-download">Download .wiki</button>
@@ -34,6 +35,10 @@
     <main id="editor-panel">
       <div id="editor"></div>
     </main>
+    <aside id="toc-panel">
+      <div id="toc-header">Inhaltsverzeichnis</div>
+      <div id="toc-list"></div>
+    </aside>
     <aside id="quelltext-panel">
       <div id="quelltext-header">Wiki-Quelltext</div>
       <pre id="quelltext-content"></pre>

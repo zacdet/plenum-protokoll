@@ -5,6 +5,7 @@ import { createRichEditor, getEditorWikiContent } from './richEditor.js'
 import { renderUserBadges } from './awareness.js'
 import { initPresence, watchPresence, removePresence } from './presence.js'
 import { initToolbar } from './toolbar.js'
+import { initToc } from './toc.js'
 import { downloadWiki, showToast } from './export.js'
 import { initProtocolSelector } from './protocolSelector.js'
 import { loadProtocolList, createProtocol, createBackup } from './protocols.js'
@@ -51,9 +52,19 @@ async function main() {
     location.reload()
   })
 
+  const workspace = document.getElementById('workspace')
+
+  // TOC-Panel
+  const tocBtn = document.getElementById('btn-toc')
+  let tocOpen = false
+  tocBtn.addEventListener('click', () => {
+    tocOpen = !tocOpen
+    workspace.classList.toggle('with-toc', tocOpen)
+    tocBtn.classList.toggle('active', tocOpen)
+  })
+
   // Quelltext-Panel (Wiki-Syntax-Vorschau)
   const quelltextBtn = document.getElementById('btn-quelltext')
-  const workspace    = document.getElementById('workspace')
   let quelltextOpen  = false
 
   quelltextBtn.addEventListener('click', () => {
@@ -146,6 +157,7 @@ async function mountEditor(roomId, identity) {
   active = { provider, presenceUnsub, editor, ydoc }
 
   initToolbar(document.getElementById('toolbar'), editor)
+  initToc(document.getElementById('toc-panel'), editor)
 
   const statusEl = document.getElementById('connection-status')
   if (provider.connected) {
