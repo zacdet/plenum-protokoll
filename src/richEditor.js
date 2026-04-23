@@ -4,7 +4,6 @@ import Collaboration from '@tiptap/extension-collaboration'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
-// Lokaler Speicher für eingeklappte Blöcke (nicht synchronisiert)
 const collapsedStarts = new Set()
 
 const WikiFoldingPlugin = new Plugin({
@@ -12,6 +11,15 @@ const WikiFoldingPlugin = new Plugin({
   state: {
     init() { return DecorationSet.empty },
     apply(tr, oldState) {
+      if (tr.docChanged) {
+        const remapped = new Set()
+        for (const pos of collapsedStarts) {
+          remapped.add(tr.mapping.map(pos))
+        }
+        collapsedStarts.clear()
+        for (const pos of remapped) collapsedStarts.add(pos)
+      }
+
       const meta = tr.getMeta('wikiFoldingUpdate')
       if (tr.docChanged || meta) {
         const decorations = []
@@ -22,22 +30,18 @@ const WikiFoldingPlugin = new Plugin({
           if (node.type.name === 'paragraph') {
             const text = node.textContent.trim()
             const isStart = text.startsWith('{{')
-            const isEnd = text.endsWith('}}') || text === '}}'
+            const isEnd = text === '}}' || (text.endsWith('}}') && !isStart)
 
             if (isStart) {
               currentTemplateStartPos = pos
               isCollapsed = collapsedStarts.has(pos)
-              
-              // Dekorator für die Start-Zeile (Pfeil-Indikator)
               decorations.push(Decoration.node(pos, pos + node.nodeSize, {
                 class: 'wiki-template-start' + (isCollapsed ? ' is-collapsed' : ''),
                 'data-folding-trigger': 'true'
               }))
             } else if (currentTemplateStartPos !== null) {
-              // Markiere Zeilen innerhalb eines Templates
               const classes = ['wiki-template-line']
               if (isCollapsed) classes.push('is-hidden')
-              
               decorations.push(Decoration.node(pos, pos + node.nodeSize, {
                 class: classes.join(' ')
               }))
@@ -58,22 +62,32 @@ const WikiFoldingPlugin = new Plugin({
     decorations(state) {
       return this.getState(state)
     },
-    handleClick(view, pos, event) {
-      const { state } = view
-      const $pos = state.doc.resolve(pos)
-      const nodePos = $pos.before()
-      const node = state.doc.nodeAt(nodePos)
+    handleDOMEvents: {
+      click(view, event) {
+        let el = event.target
+        while (el && el !== view.dom) {
+          if (el.getAttribute && el.getAttribute('data-folding-trigger')) {
+            try {
+              const domPos = view.posAtDOM(el, 0)
+              const $pos = view.state.doc.resolve(domPos)
+              const nodePos = $pos.depth > 0 ? $pos.before() : domPos
 
-      if (node && node.textContent.trim().startsWith('{{')) {
-        if (collapsedStarts.has(nodePos)) {
-          collapsedStarts.delete(nodePos)
-        } else {
-          collapsedStarts.add(nodePos)
+              if (collapsedStarts.has(nodePos)) {
+                collapsedStarts.delete(nodePos)
+              } else {
+                collapsedStarts.add(nodePos)
+              }
+              view.dispatch(view.state.tr.setMeta('wikiFoldingUpdate', true))
+              event.preventDefault()
+            } catch (e) {
+              console.warn('WikiFolding click error', e)
+            }
+            return true
+          }
+          el = el.parentElement
         }
-        view.dispatch(state.tr.setMeta('wikiFoldingUpdate', true))
-        return true
+        return false
       }
-      return false
     }
   }
 })

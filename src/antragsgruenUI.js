@@ -126,10 +126,10 @@ export async function showAmendmentsModal() {
 async function insertSingleAmendment(url) {
   if (!_editor) return
   const am = await fetchAmendmentDetails(url)
-  
+
+  const displayId = am.title.split(':')[0].trim()
   const lines = [
-    `'''${am.id || am.title.split(':')[0].trim()}'''`,
-    '{{Änderungsantrag',
+    `{{Änderungsantrag ${displayId}`,
     `|1=Antragsteller: ${am.applicant || 'N.N.'}`,
     `|2=Antragstext: ${am.instructions}`,
     `|3=Begründung: ${am.reasoning}`,
