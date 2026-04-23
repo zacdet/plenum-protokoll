@@ -23,21 +23,27 @@ export async function fetchFullMotionData(motionUrl) {
 
   const applicant = extractApplicant(doc)
 
-  const reasoningEl = doc.querySelector('.motionTextHolder h2, .motionTextHolder h3')
+  let text = ''
   let reasoning = ''
-  if (reasoningEl && /begründung/i.test(reasoningEl.textContent)) {
-    reasoning = reasoningEl.closest('.motionTextHolder')?.querySelector('.text')?.textContent.trim() || ''
-  }
 
-  const textEls = doc.querySelectorAll('.textOrig')
-  let paragraphs = []
-  textEls.forEach(el => {
-    const clone = el.cloneNode(true)
-    clone.querySelectorAll('.lineNumber, .line-number, .privateParagraphNoteHolder').forEach(e => e.remove())
-    const pText = clone.textContent.trim()
-    if (pText) paragraphs.push(pText)
+  doc.querySelectorAll('section.motionTextHolder').forEach(section => {
+    const heading = section.querySelector('h2, h3')?.textContent.trim() || ''
+    const isReasoning = /begründung/i.test(heading)
+
+    const paragraphs = []
+    section.querySelectorAll('.textOrig').forEach(el => {
+      const clone = el.cloneNode(true)
+      clone.querySelectorAll('.lineNumber, .line-number, .privateParagraphNoteHolder').forEach(e => e.remove())
+      const pText = clone.textContent.trim()
+      if (pText) paragraphs.push(pText)
+    })
+
+    if (isReasoning) {
+      reasoning = paragraphs.join('\n\n')
+    } else if (/antragstext/i.test(heading)) {
+      text = paragraphs.join('\n\n')
+    }
   })
-  const text = paragraphs.join('\n\n')
 
   const amendments = []
   const amLinks = doc.querySelectorAll('ul.amendments li a')
