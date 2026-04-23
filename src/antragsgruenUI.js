@@ -1,5 +1,5 @@
 
-import { fetchAllMotions, fetchAllAmendments, fetchFullMotionData, fetchAmendmentDetails } from './antragsgruen.js'
+import { fetchConsultationData, fetchFullMotionData, fetchAmendmentDetails, prefetch } from './antragsgruen.js'
 
 let _editor = null
 let _consultationUrl = localStorage.getItem('antragsgruen-url') || 'https://antragstool.bufak-wiwi.org/index.php?consultationPath=bufak-bremen'
@@ -72,27 +72,29 @@ export async function showAmendmentsModal() {
       </div>
     `).join('')
 
-    listEl.querySelectorAll('.ag-item-insert').forEach((btn, idx) => {
-      btn.onclick = async () => {
+    listEl.querySelectorAll('.ag-item').forEach((item, idx) => {
+      const m = filtered[idx]
+      item.addEventListener('mouseenter', () => prefetch(m.url), { once: true })
+
+      item.querySelector('.ag-item-insert').onclick = async (btn => async () => {
         btn.disabled = true
         btn.textContent = 'Lädt...'
         if (currentTab === 'amendments') {
-          await insertSingleAmendment(filtered[idx].url)
+          await insertSingleAmendment(m.url)
         } else {
-          await insertFullMotion(filtered[idx].url)
+          await insertFullMotion(m.url)
         }
         document.body.removeChild(overlay)
-      }
+      })(item.querySelector('.ag-item-insert'))
     })
   }
 
   const loadData = async () => {
     listEl.innerHTML = '<div class="loading">Lade Anträge und Änderungen...</div>'
     try {
-      [allMotions, allAmendments] = await Promise.all([
-        fetchAllMotions(_consultationUrl),
-        fetchAllAmendments(_consultationUrl)
-      ])
+      const data = await fetchConsultationData(_consultationUrl)
+      allMotions = data.motions
+      allAmendments = data.amendments
       renderList(searchInput.value)
     } catch (err) {
       listEl.innerHTML = `<div class="error">Fehler beim Laden: ${err.message}</div>`
