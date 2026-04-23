@@ -64,10 +64,10 @@ export async function showAmendmentsModal() {
       <div class="ag-item">
         <div class="ag-item-id">${m.id}</div>
         <div class="ag-item-content">
-          <div class="ag-item-title">${currentTab === 'amendments' ? m.id : m.title}</div>
-          <div class="ag-item-subtitle">${m.fullTitle}</div>
+          <div class="ag-item-title">${currentTab === 'amendments' ? m.fullTitle : m.title}</div>
+          <div class="ag-item-subtitle">${currentTab === 'amendments' ? m.motionTitle : m.id}</div>
         </div>
-        <button class="ag-item-insert btn-primary">${currentTab === 'amendments' ? 'Einfügen' : 'Gesamtpaket einfügen'}</button>
+        <button class="ag-item-insert btn-primary">Einfügen</button>
       </div>
     `).join('')
 
@@ -150,19 +150,6 @@ async function insertFullMotion(url) {
   lines.push(`|1=Antragsteller: ${data.applicant || 'N.N.'}`)
   lines.push('|2=Antragstext: ' + data.text)
   lines.push('')
-
-  // Amendments inside parameter 2
-  data.amendments.forEach(am => {
-    lines.push(`'''${am.id}'''`)
-    lines.push('{{Änderungsantrag')
-    lines.push(`|1=Antragsteller: ${am.applicant || 'N.N.'}`)
-    lines.push(`|2=Antragstext: ${am.instructions}`)
-    lines.push(`|3=Begründung: ${am.reasoning}`)
-    lines.push('|4=Beschluss: ')
-    lines.push('}}')
-    lines.push('')
-  })
-
   lines.push(`|3=Begründung: ${data.reasoning}`)
   lines.push('|4=Diskussion: ')
   lines.push('* ')

@@ -10,15 +10,17 @@ export async function fetchFullMotionData(motionUrl) {
   const applicant = doc.querySelector('.metadata .applicant, .meta .applicant')?.textContent.trim() || ''
   const reasoning = doc.querySelector('.reasoning .content, .begruendung .content')?.textContent.trim() || ''
   
-  // Antragsgrün uses specific classes for the original text
-  const textEl = doc.querySelector('.textOrig') || doc.querySelector('.motion-text') || doc.querySelector('.antragstext');
-  let text = ''
-  if (textEl) {
+  // Antragsgrün uses specific classes for the original text paragraphs
+  const textEls = doc.querySelectorAll('.textOrig, .motion-text, .antragstext');
+  let paragraphs = []
+  textEls.forEach(el => {
     // Remove line numbers if present
-    const clone = textEl.cloneNode(true)
-    clone.querySelectorAll('.lineNumber, .line-number').forEach(el => el.remove())
-    text = clone.textContent.trim()
-  }
+    const clone = el.cloneNode(true)
+    clone.querySelectorAll('.lineNumber, .line-number').forEach(e => e.remove())
+    const pText = clone.textContent.trim()
+    if (pText) paragraphs.push(pText)
+  })
+  let text = paragraphs.join('\n\n')
 
   const amendments = []
   const amLinks = doc.querySelectorAll('.amendments li a, .amendmentRow a')
