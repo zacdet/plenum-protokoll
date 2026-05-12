@@ -1,4 +1,5 @@
 import { getRoomId, setRoomId } from './room.js'
+import { requireLogin, logout } from './auth.js'
 import { requireIdentity } from './identity.js'
 import { initCollaboration } from './collaboration.js'
 import { createRichEditor, getEditorWikiContent } from './richEditor.js'
@@ -16,6 +17,8 @@ let selectorSetCurrentId = null
 
 async function main() {
   initTheme()
+
+  await requireLogin()
 
   const identity = await requireIdentity()
 
@@ -49,6 +52,12 @@ async function main() {
   })
   document.getElementById('btn-identity').addEventListener('click', () => {
     localStorage.removeItem('plenum-protokoll-identity')
+    location.reload()
+  })
+
+  document.getElementById('btn-logout').addEventListener('click', async () => {
+    localStorage.removeItem('plenum-protokoll-identity')
+    await logout()
     location.reload()
   })
 

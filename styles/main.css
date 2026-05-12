@@ -504,6 +504,15 @@ button.btn-secondary {
   border-radius: var(--radius);
 }
 
+.login-error {
+  font-size: 13px;
+  color: var(--color-danger);
+  text-align: center;
+  background: rgba(230, 57, 70, 0.1);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
 /* =====================
    Auto-Save-Anzeige
    ===================== */
