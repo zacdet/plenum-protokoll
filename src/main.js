@@ -1,5 +1,5 @@
 import { getRoomId, setRoomId } from './room.js'
-import { requireLogin, logout } from './auth.js'
+import { requireLogin, logout, isAdmin } from './auth.js'
 import { requireIdentity } from './identity.js'
 import { initCollaboration } from './collaboration.js'
 import { createRichEditor, getEditorWikiContent } from './richEditor.js'
@@ -31,7 +31,8 @@ async function main() {
   selectorSetCurrentId = initProtocolSelector(
     document.getElementById('protocol-selector-container'),
     roomId,
-    switchProtocol
+    switchProtocol,
+    isAdmin()
   )
 
   await mountEditor(roomId, identity)

@@ -1,8 +1,14 @@
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth } from './firebase.js'
 
+const ADMIN_UID = 'VuIsaaoJTxQGIvnJE6f3LPx27cy1'
+
 export function getCurrentUser() {
   return auth.currentUser
+}
+
+export function isAdmin() {
+  return auth.currentUser?.uid === ADMIN_UID
 }
 
 export function logout() {

@@ -2,7 +2,7 @@
  * Protokoll-Liste in Firebase verwalten
  * /protocols/{id} → { title, createdAt }
  */
-import { ref, set, get, onValue, serverTimestamp } from 'firebase/database'
+import { ref, set, get, remove, onValue } from 'firebase/database'
 import { db } from './firebase.js'
 
 export function generateProtocolId() {
@@ -37,6 +37,11 @@ export async function loadProtocolList() {
     list.push({ id: child.key, ...child.val() })
   })
   return list.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export async function deleteProtocol(id) {
+  await remove(ref(db, `protocols/${id}`))
+  await remove(ref(db, `rooms/${id}`))
 }
 
 export function watchProtocolList(callback) {

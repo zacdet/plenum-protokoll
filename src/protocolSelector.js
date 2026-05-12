@@ -1,10 +1,11 @@
-import { createProtocol, watchProtocolList } from './protocols.js'
+import { createProtocol, deleteProtocol, watchProtocolList } from './protocols.js'
 import { showToast, downloadWiki } from './export.js'
 
-export function initProtocolSelector(containerEl, initialId, onSwitch) {
+export function initProtocolSelector(containerEl, initialId, onSwitch, isAdmin = false) {
   containerEl.innerHTML = ''
 
   let currentId = initialId
+  let currentList = []
   let open = false
 
   const wrapper = document.createElement('div')
@@ -32,24 +33,22 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
     dropdown.classList.add('hidden')
   })
 
-  // currentId von außen aktualisieren (nach Protokollwechsel)
   function setCurrentId(id) {
     currentId = id
     const labelEl = document.getElementById('protocol-title-label')
     if (labelEl) {
-      // Titel aus der aktuellen Liste suchen
-      const btn = dropdown.querySelector(`.protocol-item[data-id="${id}"]`)
-      labelEl.textContent = btn
-        ? btn.querySelector('.protocol-item-title')?.textContent || id
+      const item = dropdown.querySelector(`.protocol-item[data-id="${id}"]`)
+      labelEl.textContent = item
+        ? item.querySelector('.protocol-item-title')?.textContent || id
         : id
     }
-    // Aktiv-Markierung aktualisieren
     dropdown.querySelectorAll('.protocol-item').forEach(el => {
       el.classList.toggle('active', el.dataset.id === id)
     })
   }
 
   watchProtocolList(list => {
+    currentList = list
     renderDropdown(list)
     const current = list.find(p => p.id === currentId && !p.isBackup)
     const labelEl = document.getElementById('protocol-title-label')
@@ -90,13 +89,18 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
   }
 
   function editableItem(protocol) {
-    const item = document.createElement('button')
+    const item = document.createElement('div')
     item.className = 'protocol-item' + (protocol.id === currentId ? ' active' : '')
     item.dataset.id = protocol.id
-    item.innerHTML = `
+
+    const body = document.createElement('div')
+    body.className = 'protocol-item-body'
+    body.innerHTML = `
       <span class="protocol-item-title">${esc(protocol.title)}</span>
       <span class="protocol-item-date">${fmtDate(protocol.createdAt)}</span>
     `
+    item.appendChild(body)
+
     item.addEventListener('click', e => {
       e.stopPropagation()
       dropdown.classList.add('hidden')
@@ -106,24 +110,67 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
         onSwitch(protocol.id)
       }
     })
+
+    if (isAdmin) {
+      item.appendChild(makeDeleteButton(protocol.title, async () => {
+        const wasActive = protocol.id === currentId
+        await deleteProtocol(protocol.id)
+        if (wasActive) {
+          const remaining = currentList.filter(p => !p.isBackup && p.id !== protocol.id)
+          if (remaining.length > 0) {
+            setCurrentId(remaining[0].id)
+            onSwitch(remaining[0].id)
+          } else {
+            const newId = await createProtocol('Plenum ' + new Date().toLocaleDateString('de-DE'))
+            setCurrentId(newId)
+            onSwitch(newId)
+          }
+        }
+      }))
+    }
+
     return item
   }
 
   function backupItem(protocol) {
-    const item = document.createElement('button')
+    const item = document.createElement('div')
     item.className = 'protocol-item protocol-item--backup'
     item.dataset.id = protocol.id
-    item.innerHTML = `
+
+    const body = document.createElement('div')
+    body.className = 'protocol-item-body'
+    body.innerHTML = `
       <span class="protocol-item-title">⬇ ${esc(protocol.title)}</span>
       <span class="protocol-item-date">${fmtDateTime(protocol.createdAt)}</span>
     `
+    item.appendChild(body)
+
     item.addEventListener('click', e => {
       e.stopPropagation()
       dropdown.classList.add('hidden')
       open = false
       downloadWiki(protocol.snapshotContent || '', protocol.id)
     })
+
+    if (isAdmin) {
+      item.appendChild(makeDeleteButton(protocol.title, () => deleteProtocol(protocol.id)))
+    }
+
     return item
+  }
+
+  function makeDeleteButton(title, onConfirm) {
+    const btn = document.createElement('button')
+    btn.className = 'protocol-delete-btn'
+    btn.title = 'Löschen'
+    btn.textContent = '✕'
+    btn.addEventListener('click', async e => {
+      e.stopPropagation()
+      dropdown.classList.add('hidden')
+      open = false
+      if (await confirmDelete(title)) await onConfirm()
+    })
+    return btn
   }
 
   async function handleNew() {
@@ -139,8 +186,40 @@ export function initProtocolSelector(containerEl, initialId, onSwitch) {
     onSwitch(id)
   }
 
-  // Gibt Funktion zurück um currentId von außen zu setzen
   return setCurrentId
+}
+
+function confirmDelete(title) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.innerHTML = `
+      <div class="modal">
+        <h2>Wirklich löschen?</h2>
+        <p class="confirm-delete-text">
+          <strong>${esc(title)}</strong> wird dauerhaft gelöscht. Das kann nicht rückgängig gemacht werden.
+        </p>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="del-cancel">Abbrechen</button>
+          <button class="btn-danger" id="del-confirm">Löschen</button>
+        </div>
+      </div>
+    `
+    document.body.appendChild(overlay)
+
+    const done = (result) => {
+      document.body.removeChild(overlay)
+      resolve(result)
+    }
+
+    overlay.querySelector('#del-confirm').addEventListener('click', () => done(true))
+    overlay.querySelector('#del-cancel').addEventListener('click',  () => done(false))
+    overlay.addEventListener('keydown', e => {
+      if (e.key === 'Escape') done(false)
+    })
+
+    setTimeout(() => overlay.querySelector('#del-cancel').focus(), 50)
+  })
 }
 
 function promptTitle(defaultValue) {
