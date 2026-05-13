@@ -557,6 +557,36 @@ button.btn-danger:hover {
   padding: 8px 12px;
 }
 
+.login-email-wrapper {
+  display: flex;
+  align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s;
+}
+
+.login-email-wrapper:focus-within {
+  border-color: var(--color-accent);
+}
+
+.login-email-wrapper input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius) 0 0 var(--radius);
+  outline: none;
+  min-width: 0;
+}
+
+.login-email-domain {
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
 /* =====================
    Auto-Save-Anzeige
    ===================== */

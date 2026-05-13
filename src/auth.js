@@ -39,8 +39,11 @@ function showLoginModal(resolve) {
       <p class="identity-subtitle">Melde dich mit deinen Zugangsdaten an.</p>
 
       <label>
-        E-Mail
-        <input id="login-email" type="email" placeholder="name@beispiel.de" autocomplete="email" />
+        Benutzername
+        <div class="login-email-wrapper">
+          <input id="login-email" type="text" placeholder="name" autocomplete="username" />
+          <span class="login-email-domain">@bufak-wiwi.org</span>
+        </div>
       </label>
 
       <label>
@@ -75,7 +78,9 @@ function showLoginModal(resolve) {
     errorEl.style.display = 'none'
 
     try {
-      const result = await signInWithEmailAndPassword(auth, emailInput.value.trim(), passwordInput.value)
+      const raw = emailInput.value.trim()
+      const email = raw.includes('@') ? raw : raw + '@bufak-wiwi.org'
+      const result = await signInWithEmailAndPassword(auth, email, passwordInput.value)
       document.body.removeChild(overlay)
       resolve(result.user)
     } catch (err) {
